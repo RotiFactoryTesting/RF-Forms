@@ -1,0 +1,2300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#0F0E0C"/>
+<title>RF Forms</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+body{background:#0F0E0C;color:#F0EDE8;font-family:'DM Sans',sans-serif;overscroll-behavior:none;}
+button{font-family:'DM Sans',sans-serif;cursor:pointer;}
+button:active{opacity:0.75;}
+input,textarea,select{font-family:'DM Sans',sans-serif;}
+input[type=number]{-webkit-appearance:none;-moz-appearance:textfield;}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+select{-webkit-appearance:none;appearance:none;background:#1e1b18!important;color:#F0EDE8!important;}
+select option{background:#1e1b18!important;color:#F0EDE8!important;}
+::-webkit-scrollbar{display:none;}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1814;
+  border:1px solid rgba(255,255,255,0.15);color:#F0EDE8;padding:12px 22px;border-radius:12px;
+  font-weight:600;font-size:14px;display:none;z-index:9999;white-space:nowrap;pointer-events:none;}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:500;
+  display:none;align-items:flex-end;justify-content:center;}
+#modal.open{display:flex;}
+#modal-box{background:#1e1b18;border-radius:20px 20px 0 0;padding:20px;
+  width:100%;max-width:500px;max-height:82vh;overflow-y:auto;}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<div id="modal"><div id="modal-box"></div></div>
+<div id="app"></div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{getDatabase,ref,set,get,push,onValue,remove,update}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ── FIREBASE ──────────────────────────────────────────────────────────────────
+const FB_CFG={
+  apiKey:"AIzaSyAawhrrI8tFnlpaXo7uomEsA_0jAPvjPxs",
+  authDomain:"rf-forms.firebaseapp.com",
+  databaseURL:"https://rf-forms-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"rf-forms",storageBucket:"rf-forms.firebasestorage.app",
+  messagingSenderId:"578218375284",appId:"1:578218375284:web:9f0e66c3e84c64962cf921"
+};
+const fbApp=initializeApp(FB_CFG);
+const db=getDatabase(fbApp);
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const C={
+  amber:"#F0A500",red:"#E85C38",green:"#2DD4A0",blue:"#38A8E8",
+  purple:"#A855F7",teal:"#14B8A6",orange:"#F97316",
+  bg:"#0F0E0C",surface:"rgba(255,255,255,0.05)",border:"rgba(255,255,255,0.10)",
+  text:"#F0EDE8",muted:"rgba(240,237,232,0.45)",dark:"#1e1b18",
+};
+
+const MACHINES=["MC 1","MC RP","MC 3","MC 4","MC 5","MC 6","MC 7","MC 8","MC 9","MC 10"];
+const QC_LINES=["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6"];
+const LINE_MACHINES={
+  "Line 1":["MC 1"],
+  "Line 2":["MC RP","MC 3"],
+  "Line 3":["MC 4","MC 5"],
+  "Line 4":["MC 6","MC 7"],
+  "Line 5":["MC 8"],
+  "Line 6":["MC 9","MC 10"],
+};
+const SHIFT_ROUNDS=["Start of Shift","Current Time","End of Shift"];
+const ROUND_COLORS={"Start of Shift":"#F0A500","End of Shift":"#A855F7","Current Time":"#38A8E8"};
+
+const GROOMING_STAFF=["Dilip","Raju","Saagir","Ram Pramod","Mona","Mohd Avesh","Sanjay Marak","Mohan Rajak","Munna","Sunita","Priya","Chandrawati","Shanti","Sangeeta 1","Sangeeta 2","Julie","Rijwana","Jamna","Laxmi","Rekha","Renu","Janki","Hansa","Babita","Mohit"];
+const GROOMING_PARAMS=["Hair caps","Nails trimmed","Clean appearance","Clean clothes","No jewellery","No bindis","No edibles in plant","No gutka & tobacco","Proper footwear","Gloves","No beards","Scheduled handwash","No open cuts/wounds"];
+const MACHINE_PARAMS=["Cleaning","Pressing plate","Belts","Oiling","Pusher","Wire holders","Hydraulic press","Sensors","Burners","Paltu set","Timing","Hopper clean","Clutch clean","Conveyor"];
+const BREAKDOWN_ISSUES=["Hydraulic","Belt","Kapda","Tawa","Sensor","Motor","Hopper","Unit","Paltu","Chain","Oil","Gas","Conveyor belts","Timing","Gear broken","Clutch","Electrical","SSR","Holder","Ball cutting"];
+const MAINTENANCE_WORKS=["Paltu","Kapda","Belts","Pressing plate","Roller cloth","Shaft repair","Shaft change","Bearing change","Timing","Chain","Hydraulic oil","Paltu clean","Rollers change","Roller repair","Sensor change","Thimble","Oiling","Temperature controller","Burners clean","Tawa clean","Electrical work","Motor repair","Conveyor belts","Conveyor shafts","Pressing block","Hydraulic cylinder seal","Camera","Bearing housing"];
+const EQUIPMENT_LIST=["ROW Tank","UWW Tank 1","UWW Tank 2","UWW Tank 3","UTW Tank 1","UTW Tank 2","UTW Tank 3","ROW Chiller","SW Chiller","Weigh MC","Computers","Invertor","Genset","Motor timers","Big Coolers","Small Coolers","Insect Traps MC","Exhausts","Air Curtains","RO"];
+const ROUTES=Array.from({length:20},(_,i)=>"Route "+(i+1));
+const TRAINER_OPTIONS=["Bishwajeet","Ruchi","Kapil","Saurabh","Dharmendar","External Trainer","Other"];
+const TRAINING_TOPICS=["Housekeeping","Equipment Handling","Deep Cleaning","M/C Ops","M/C Cleaning","Safety Guidelines","M/C Maintenance","Roti Sorting","Roti Quality","Roti Packing","Roti Storage","Personal Hygiene","Roti Pickup","Line Control","Line Reporting","Other"];
+const TRAINING_DURATIONS=["5 mins","10 mins","15 mins","20 mins","30 mins","45 mins","1 hour","Other"];
+const PEST_VENDORS=["Vendor A","Vendor B","Vendor C","Other"];
+const PEST_TYPES=["Rodents","Cockroaches","Ants","Spiders","Flies","Other"];
+const MD_PARAMS=["1.7mm","1.4mm","1.0mm","0.1mm","Cleaning","Belt condition"];
+const ATTENDEE_GROUPS={
+  "Drivers":["Ranjeet","Shainawaz","Vikas","Anwar","Kuldeep","Uday","Shaizad","Shanty","Pawan","Ranjeet Bike","Tejprakash"],
+  "Housekeeping":["Monu"],
+  "Office":["Bishwajeet","Ram","Mohit","Kapil","Dharmendar","Kusum Madam","Ruchi"],
+  "Machine Operators":["Dilip","Raju","Saagir","Ram Pramod","Mona","Mohd Avesh","Sanjay Marak"],
+  "Atta Operators":["Mohan Rajak","Munna"],
+  "Packing Staff":["Sunita","Priya","Chandrawati","Shanti","Sangeeta 1","Sangeeta 2","Julie","Rijwana","Jamna","Laxmi","Rekha","Renu","Janki","Hansa","Babita"],
+  "Line Leaders":["Rekha","Babita","Hansa","Chandrawati","Julie","Shanti"],
+};
+const ICON_OPTS=["◉","📋","🐛","🔩","👷","🧹","⚙","🔴","🔧","🚚","🪪","📅","📊","✅","⚠","🔍","📦","📝"];
+const COLOR_OPTS=["#F0A500","#38A8E8","#2DD4A0","#A855F7","#14B8A6","#F97316","#E85C38","#EC4899","#6366F1","#84CC16"];
+const FIELD_TYPES=["text","number","dropdown","toggle","multi_select","rating5","date","time"];
+const FIELD_TYPE_LABELS={text:"Text / Notes",number:"Number",dropdown:"Dropdown",toggle:"Toggle buttons",multi_select:"Multi-select",rating5:"Rating 1–5",date:"Date picker",time:"Time input"};
+
+
+// ── HINDI TRANSLATIONS ────────────────────────────────────────────────────────
+const HI = {
+  // Common
+  "Date":"तारीख","Shift":"शिफ्ट","Checked By":"जाँचकर्ता","Department":"विभाग",
+  "Overall Score":"कुल स्कोर","Additional Issues":"अन्य समस्याएं",
+  "Comments":"टिप्पणी","Remarks":"टिप्पणी","Status":"स्थिति",
+  "Yes":"हाँ","No":"नहीं","NA":"लागू नहीं",
+  // Grooming
+  "Hair caps":"हेयर कैप","Nails trimmed":"नाखून कटे हुए",
+  "Clean appearance":"साफ दिखावट","Clean clothes":"साफ कपड़े",
+  "No jewellery":"गहने नहीं","No bindis":"बिंदी नहीं",
+  "No edibles in plant":"प्लांट में खाना नहीं","No gutka & tobacco":"गुटखा व तंबाकू नहीं",
+  "Proper footwear":"उचित जूते","Gloves":"दस्ताने","No beards":"दाढ़ी नहीं",
+  "Scheduled handwash":"निर्धारित हाथ धुलाई","No open cuts/wounds":"कोई खुला घाव नहीं",
+  // Housekeeping
+  "Production floor":"उत्पादन फर्श","Machines & conveyors":"मशीनें और कन्वेयर",
+  "Drainage":"नाली","Storage area":"भंडारण क्षेत्र",
+  "Packaging area":"पैकेजिंग क्षेत्र","Raw material area":"कच्चा माल क्षेत्र",
+  "Toilets":"शौचालय","Wash basins":"वॉश बेसिन","Common areas":"सामान्य क्षेत्र",
+  "Office area":"कार्यालय क्षेत्र","Entrance / lobby":"प्रवेश / लॉबी",
+  "Pest Signs":"कीट के संकेत","Soap / Sanitiser":"साबुन / सैनिटाइज़र",
+  "Issues / Actions":"समस्याएं / कार्रवाई",
+  "Production":"उत्पादन","Storage":"भंडारण","Toilets & Common":"शौचालय व सामान्य","Office":"कार्यालय",
+  // Machine Status
+  "Machine Status":"मशीन स्थिति","Parameters":"पैरामीटर",
+  "Cleaning":"सफाई","Pressing plate":"प्रेसिंग प्लेट","Belts":"बेल्ट",
+  "Oiling":"ऑयलिंग","Pusher":"पुशर","Wire holders":"वायर होल्डर",
+  "Hydraulic press":"हाइड्रोलिक प्रेस","Sensors":"सेंसर","Burners":"बर्नर",
+  "Paltu set":"पालतू सेट","Timing":"टाइमिंग","Hopper clean":"हॉपर सफाई",
+  "Clutch clean":"क्लच सफाई","Conveyor":"कन्वेयर",
+  "Run":"चालू","Not-Run":"बंद","OK":"ठीक है","Not OK":"ठीक नहीं",
+  // Breakdown
+  "Breakdown Issues":"खराबी समस्याएं","Timing & Resolution":"समय और समाधान",
+  "Machine Off Time":"मशीन बंद समय","Machine On Time":"मशीन चालू समय",
+  "Work Done":"किया गया काम","Spares Used":"स्पेयर पार्ट्स",
+  "Reported To":"रिपोर्ट किया","Machine No.":"मशीन नं.",
+  "Fixed":"ठीक हो गई","Partially Fixed":"आंशिक ठीक","Pending":"बाकी","Ongoing":"जारी",
+  // Maintenance
+  "Daily Maintenance":"दैनिक रखरखाव","Done By":"किसने किया",
+  "Pending Work":"बाकी काम",
+  // Delivery
+  "Dispatch Info":"डिस्पैच जानकारी","Route No.":"रूट नं.",
+  "Clients on Route":"रूट पर ग्राहक","Driver Name":"चालक का नाम",
+  "Vehicle Number":"वाहन नंबर","Out Time":"निकलने का समय",
+  "Vehicle & Load":"वाहन और माल","Vehicle Cleanliness":"वाहन की सफाई",
+  "Packaging Intact":"पैकेजिंग सही","Quantity Match":"मात्रा मिलान",
+  "Temp at Dispatch":"डिस्पैच पर तापमान","Driver Hygiene":"चालक स्वच्छता",
+  "Driver Uniform":"चालक वर्दी","Driver PPE / Mask":"चालक PPE / मास्क",
+  "Delivery Outcome":"डिलीवरी परिणाम","Delivery Status":"डिलीवरी स्थिति",
+  "Client Signature":"ग्राहक हस्ताक्षर","Return Time":"वापसी का समय",
+  "Delivered":"डिलीवर हुई","Partial":"आंशिक","Failed":"विफल",
+  "Received":"प्राप्त हुई","Not Received":"प्राप्त नहीं","Digital":"डिजिटल",
+  // Visitor
+  "Visitor Name":"आगंतुक का नाम","Company / From":"कंपनी / कहाँ से",
+  "Purpose":"उद्देश्य","Host / Meeting With":"मेज़बान",
+  "Time In":"प्रवेश समय","Time Out":"निकास समय","ID Shown":"ID दिखाई",
+  "PPE / Badge Issued":"PPE / बैज जारी","Hygiene Briefing Given":"स्वच्छता जानकारी दी",
+  "Meeting":"मीटिंग","Delivery":"डिलीवरी","Inspection":"निरीक्षण",
+  "Repair":"मरम्मत","Vendor":"विक्रेता","Personal":"व्यक्तिगत","Other":"अन्य",
+};
+function t(label){ return (S.user&&S.user.lang==="hi"&&HI[label])||label; }
+function tOpts(opts){ return opts.map(o=>(S.user&&S.user.lang==="hi"&&HI[o])||o); }
+
+// ── DEFAULT DATA (for Firebase seeding) ───────────────────────────────────────
+const DEFAULT_STAFF=[
+  {name:"Saurabh Mehta",pin:"1802",role:"MD",wa:"919810739747",forms:"ALL",alerts:true,reports:true,canReport:true,lang:"en",shift:null,isAdmin:true},
+  {name:"Bishwajeet",pin:"2884",role:"Ops Manager",wa:"918860722884",forms:"Training Log,Pest Control,Metal Detector Calibration",alerts:true,reports:true,canReport:false,lang:"en",shift:null,isAdmin:false},
+  {name:"Ruchi",pin:"7611",role:"QA Supervisor",wa:"9650687611",forms:"QC Form,Grooming,Housekeeping",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
+  {name:"Dharmendar",pin:"6368",role:"Production Staff",wa:"9210606368",forms:"Machine Status",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
+  {name:"Shabaj",pin:"3058",role:"Maintenance",wa:"8769503058",forms:"Breakdown Report,Maintenance Report",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
+  {name:"Kapil",pin:"8332",role:"Supervisor",wa:"9311248332",forms:"Delivery Checklist",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
+  {name:"Guard 1",pin:"8780",role:"Security",wa:"9560868780",forms:"Visitor Log",alerts:false,reports:false,canReport:false,lang:"hi",shift:"Day Shift",isAdmin:false},
+  {name:"Guard 2",pin:"9080",role:"Security",wa:"9871849080",forms:"Visitor Log",alerts:false,reports:false,canReport:false,lang:"hi",shift:"Night Shift",isAdmin:false},
+];
+const DEFAULT_FORMS_META={
+  "QC Form":{icon:"◉",color:"#F0A500",desc:"Production quality — per line",builtin:true},
+  "Training Log":{icon:"📋",color:"#38A8E8",desc:"Staff training session record",builtin:true},
+  "Pest Control":{icon:"🐛",color:"#2DD4A0",desc:"Vendor & internal pest check",builtin:true},
+  "Metal Detector Calibration":{icon:"🔩",color:"#A855F7",desc:"MD machine calibration",builtin:true},
+  "Grooming":{icon:"👷",color:"#14B8A6",desc:"Staff grooming checks",builtin:true},
+  "Housekeeping":{icon:"🧹",color:"#F97316",desc:"Area cleanliness chart",builtin:true},
+  "Machine Status":{icon:"⚙",color:"#F0A500",desc:"Daily machine status",builtin:true},
+  "Breakdown Report":{icon:"🔴",color:"#E85C38",desc:"Machine breakdown incident",builtin:true},
+  "Maintenance Report":{icon:"🔧",color:"#38A8E8",desc:"Daily maintenance log",builtin:true},
+  "Delivery Checklist":{icon:"🚚",color:"#2DD4A0",desc:"Delivery dispatch check",builtin:true},
+  "Visitor Log":{icon:"🪪",color:"#A855F7",desc:"Gate visitor entry",builtin:true},
+  "Equipment Service Record":{icon:"📅",color:"#14B8A6",desc:"Equipment service history",builtin:true},
+};
+
+// ── FIREBASE STATE ────────────────────────────────────────────────────────────
+let FB_STAFF=[];
+let FB_FORMS_META={};
+let FB_SUBMISSIONS={};
+let FB_READY=false;
+
+async function fbInit(){
+  // Seed defaults if Firebase is empty
+  const [staffSnap,formsSnap]=await Promise.all([
+    get(ref(db,"staff")),get(ref(db,"forms_meta"))
+  ]);
+  if(!staffSnap.exists()){
+    const obj={};
+    DEFAULT_STAFF.forEach((s,i)=>{obj["s"+i]={...s};});
+    await set(ref(db,"staff"),obj);
+  }
+  if(!formsSnap.exists()){
+    await set(ref(db,"forms_meta"),DEFAULT_FORMS_META);
+  }
+  // Live listeners
+  onValue(ref(db,"staff"),snap=>{
+    const d=snap.val()||{};
+    FB_STAFF=Object.entries(d).map(([k,v])=>({...v,_key:k}));
+    if(FB_READY) render();
+  });
+  onValue(ref(db,"forms_meta"),snap=>{
+    FB_FORMS_META=snap.val()||{};
+    if(FB_READY) render();
+  });
+  onValue(ref(db,"submissions"),snap=>{
+    FB_SUBMISSIONS=snap.val()||{};
+    if(FB_READY) render();
+  },err=>console.error("Submissions read blocked:",err));
+  FB_READY=true;
+  S.screen="login";
+  render();
+}
+
+function getStaff(){return FB_STAFF.length?FB_STAFF:DEFAULT_STAFF;}
+function getFormsMeta(){return Object.keys(FB_FORMS_META).length?FB_FORMS_META:DEFAULT_FORMS_META;}
+
+// Firebase write helpers
+async function fbSaveStaff(key,data){
+  if(key) await update(ref(db,"staff/"+key),data);
+  else await push(ref(db,"staff"),data);
+}
+async function fbDeleteStaff(key){await remove(ref(db,"staff/"+key));}
+async function fbSaveFormMeta(name,data){await set(ref(db,"forms_meta/"+name),data);}
+async function fbDeleteFormMeta(name){await remove(ref(db,"forms_meta/"+name));}
+async function fbSaveField(formName,fd){
+  const key=fd._key||("f"+Date.now());
+  const d={...fd};delete d._key;
+  await set(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key),d);
+}
+async function fbDeleteField(formName,key){
+  await remove(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key));
+}
+async function fbGetFields(formName){
+  const snap=await get(ref(db,"custom_fields/"+formName.replace(/ /g,"_")));
+  if(!snap.exists()) return [];
+  return Object.entries(snap.val()).map(([k,v])=>({...v,_key:k}));
+}
+// ── DRAFTS ────────────────────────────────────────────────────────────────────
+function draftKey(fn){
+  const d=new Date().toISOString().slice(0,10); // YYYY-MM-DD
+  return "drafts/"+fn.replace(/ /g,"_")+"/"+S.user.pin+"_"+d;
+}
+async function saveDraft(fn){
+  try{
+    const data={
+      fData:{...S.fData},
+      mcData:JSON.parse(JSON.stringify(S.mcData)),
+      mcParams:JSON.parse(JSON.stringify(S.mcParams)),
+      activeMC:S.activeMC,
+      groomingData:JSON.parse(JSON.stringify(S.groomingData)),
+      breakdownIssues:[...S.breakdownIssues],
+      breakdownDetails:{...S.breakdownDetails},
+      maintenanceWorks:[...S.maintenanceWorks],
+      savedAt:new Date().toISOString(),
+    };
+    await set(ref(db,draftKey(fn)),data);
+  } catch(e){console.error("Draft save failed:",e);}
+}
+async function loadDraft(fn){
+  try{
+    const snap=await get(ref(db,draftKey(fn)));
+    if(!snap.exists()) return false;
+    const d=snap.val();
+    if(d.fData) S.fData=d.fData;
+    if(d.mcData) S.mcData=d.mcData;
+    if(d.mcParams) S.mcParams=d.mcParams;
+    if(d.activeMC) S.activeMC=d.activeMC;
+    if(d.groomingData) S.groomingData=d.groomingData;
+    if(d.breakdownIssues) S.breakdownIssues=d.breakdownIssues;
+    if(d.breakdownDetails) S.breakdownDetails=d.breakdownDetails;
+    if(d.maintenanceWorks) S.maintenanceWorks=d.maintenanceWorks;
+    return d.savedAt||true;
+  } catch(e){console.error("Draft load failed:",e);return false;}
+}
+async function clearDraft(fn){
+  try{await remove(ref(db,draftKey(fn)));}catch(e){}
+}
+
+function getFormLogs(fn){
+  const d=FB_SUBMISSIONS[fn.replace(/ /g,"_")]||{};
+  const fbLogs=Object.entries(d).map(([k,v])=>({...v,_key:k}));
+  const seen=new Set(fbLogs.map(l=>l.id));
+  const localLogs=getLocalSubmissions(fn).filter(l=>!seen.has(l.id)); // avoid showing a record twice once Firebase read catches up
+  return [...fbLogs,...localLogs].sort((a,b)=>b.id-a.id);
+}
+// ── LOCAL FALLBACK (used only when Firebase write/read is blocked, e.g. permission-denied) ──
+function localSubKey(fn){return "rf_local_submissions_"+fn.replace(/ /g,"_");}
+function getLocalSubmissions(fn){
+  try{
+    const raw=localStorage.getItem(localSubKey(fn));
+    return raw?JSON.parse(raw):[];
+  }catch(e){return [];}
+}
+function saveLocalSubmission(fn,entry){
+  try{
+    const list=getLocalSubmissions(fn);
+    list.push({...entry,_key:"local_"+entry.id,_local:true});
+    localStorage.setItem(localSubKey(fn),JSON.stringify(list));
+  }catch(e){console.error("Local save failed:",e);}
+}
+function deleteLocalSubmission(fn,key){
+  try{
+    const list=getLocalSubmissions(fn).filter(l=>l._key!==key);
+    localStorage.setItem(localSubKey(fn),JSON.stringify(list));
+  }catch(e){console.error(e);}
+}
+async function fbAddLog(fn,entry){
+  // Cache locally immediately, regardless of Firebase outcome — Reports/Download read
+  // from this too, so they always show what you just submitted on this device, even if
+  // Firebase read access is separately restricted from write access.
+  saveLocalSubmission(fn,entry);
+  try{
+    await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),entry);
+    return true;
+  }catch(e){
+    console.error("Firebase save failed, kept locally instead:",e);
+    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
+    return true;
+  }
+}
+async function fbDelLog(fn,key){
+  if(String(key).startsWith("local_")){deleteLocalSubmission(fn,key);render();return;}
+  try{await remove(ref(db,"submissions/"+fn.replace(/ /g,"_")+"/"+key));}
+  catch(e){console.error(e);}
+}
+
+// ── APP STATE ─────────────────────────────────────────────────────────────────
+const S={
+  screen:"loading",
+  user:null,
+  pin:"",
+  pinError:false,
+  // form filling
+  activeForm:null,
+  fData:{},        // flat form data {fieldKey: value}
+  mcData:{},       // per-machine data {machineName: {fieldKey: value}}
+  mcParams:{},     // machine status params {mc: {param: {status, comment}}}
+  activeMC:null,
+  pestMode:"Vendor Service",
+  visitorEntries:[],
+  groomingData:{}, // {param: [defaulter names]}
+  breakdownIssues:[],
+  breakdownDetails:{},
+  maintenanceWorks:[],
+  // navigation
+  historyForm:null,
+  viewingLog:null,
+  // admin
+  adminTab:"staff",
+  editingStaff:null,
+  editingFormMeta:null,
+  editingField:null,
+  editingFieldForm:null,
+  // reports
+  reportForm:null,
+  reportRange:"today",
+};
+
+function ss(patch){Object.assign(S,patch);render();}
+
+// ── UTILITIES ─────────────────────────────────────────────────────────────────
+function pad(n){return String(n).padStart(2,"0");}
+function nowTime(){const n=new Date();return pad(n.getHours())+":"+pad(n.getMinutes());}
+function nowDate(){return new Date().toISOString().slice(0,10);}
+function toStr(forms){
+  if(!forms) return "";
+  if(forms==="ALL") return "ALL";
+  if(Array.isArray(forms)) return forms.join(",");
+  return String(forms);
+}
+function toArr(forms){
+  if(!forms) return [];
+  if(forms==="ALL") return Object.keys(getFormsMeta());
+  if(Array.isArray(forms)) return forms.filter(Boolean);
+  return String(forms).split(",").map(s=>s.trim()).filter(Boolean);
+}
+function getUserForms(u){
+  if(!u) return [];
+  if(!u.forms||u.forms==="ALL") return Object.keys(getFormsMeta());
+  return toArr(u.forms);
+}
+function toast(msg,ms=2500){
+  const t=document.getElementById("toast");
+  t.textContent=msg;t.style.display="block";
+  clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",ms);
+}
+function sendWA(num,msg){window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank");}
+function sendAlerts(fails,fn,who){
+  if(!fails.length) return;
+  const now=new Date().toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"});
+  let msg="🚨 *RF Forms Alert — "+fn+"*\n"+now+" · "+who+"\n\n";
+  fails.forEach(f=>msg+="• "+f+"\n");
+  getStaff().filter(s=>s.alerts).forEach(r=>sendWA(r.wa,msg));
+}
+function afterSubmit(fn){
+  clearDraft(fn); // Clear saved draft on successful submit
+  showPostSubmitModal(fn);
+}
+
+// Attempts doSave(); on success runs onSuccess(); on failure shows a retry modal
+// instead of pretending the submission worked. Draft is left intact until it
+// actually succeeds, so nothing is lost if the connection drops.
+async function trySave(fn,doSave,onSuccess){
+  const ok=await doSave();
+  if(ok) onSuccess();
+  else showSaveFailedModal(fn,()=>trySave(fn,doSave,onSuccess));
+}
+
+function showSaveFailedModal(fn,onRetry){
+  const modal=document.getElementById("modal");
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"48px"},"⚠"));
+  const ttl=div({fontSize:"18px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"4px"});
+  ttl.textContent="Couldn't Save "+fn;box.appendChild(ttl);
+  box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",marginBottom:"20px"},
+    "Check your internet connection. Your answers are safe as a draft — nothing is lost."));
+  box.appendChild(div({height:"1px",background:C.border,marginBottom:"16px"}));
+  box.appendChild(btn({width:"100%",background:C.amber,border:"none",borderRadius:"12px",
+    color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "↻ Retry",()=>{modal.classList.remove("open");toast("Retrying…");onRetry();}));
+  box.appendChild(btn({width:"100%",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"12px",color:C.muted,fontWeight:"700",fontSize:"15px",padding:"13px"},
+    "Keep Editing",()=>{modal.classList.remove("open");}));
+  modal.classList.add("open");
+  modal.onclick=e=>{if(e.target===modal){modal.classList.remove("open");}};
+}
+
+// ── DOM HELPERS ───────────────────────────────────────────────────────────────
+function el(tag,style,children,attrs){
+  const e=document.createElement(tag);
+  if(style) Object.assign(e.style,style);
+  if(attrs) Object.entries(attrs).forEach(([k,v])=>{
+    if(k==="id") e.id=v;
+    else if(k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(),v);
+    else e.setAttribute(k,v);
+  });
+  if(children!=null){
+    (Array.isArray(children)?children:[children]).forEach(c=>{
+      if(c==null||c===false) return;
+      e.appendChild(typeof c==="string"?document.createTextNode(c):c);
+    });
+  }
+  return e;
+}
+function div(s,c,a){return el("div",s,c,a);}
+function span(s,t){const e=el("span",s);if(t!=null)e.textContent=t;return e;}
+function btn(s,t,fn){
+  const b=el("button",s);
+  b.textContent=t;
+  b.addEventListener("click",fn);
+  return b;
+}
+function inp(s,a){return el("input",s,null,a);}
+function ta(s,a){return el("textarea",s,null,a);}
+
+// ── SHARED UI COMPONENTS ──────────────────────────────────────────────────────
+function makeHdr(title,sub,rightBtns,onBack,backLabel){
+  const h=div({background:"#1a1814",borderBottom:"1px solid "+C.border,
+    padding:"14px 18px",display:"flex",alignItems:"center",gap:"10px"});
+  if(onBack){
+    h.appendChild(btn({background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"8px",color:C.text,padding:"8px 14px",fontSize:"14px",
+      fontWeight:"700"},backLabel||"← Back",onBack));
+  } else {
+    h.appendChild(div({width:"30px",height:"30px",background:C.amber,
+      borderRadius:"7px",display:"flex",alignItems:"center",
+      justifyContent:"center",fontSize:"15px",flexShrink:"0"},"◉"));
+  }
+  const mid=div({flex:"1",marginLeft:onBack?"4px":"0"});
+  const te=div({fontSize:"15px",fontWeight:"800",color:C.text});
+  te.textContent=title;mid.appendChild(te);
+  if(sub){const se=div({fontSize:"12px",color:C.muted});se.textContent=sub;mid.appendChild(se);}
+  h.appendChild(mid);
+  if(rightBtns)(Array.isArray(rightBtns)?rightBtns:[rightBtns]).forEach(b=>b&&h.appendChild(b));
+  return h;
+}
+
+function secHdr(title,color,icon){
+  const r=div({display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px",marginTop:"4px"});
+  r.appendChild(span({fontSize:"16px"},icon||"◉"));
+  r.appendChild(span({fontSize:"11px",fontWeight:"800",color,
+    letterSpacing:"0.07em",textTransform:"uppercase"},title));
+  r.appendChild(div({flex:"1",height:"1px",background:color+"33",marginLeft:"4px"}));
+  return r;
+}
+
+function wrap(){return div({padding:"16px 18px",maxWidth:"500px",margin:"0 auto"});}
+
+function submitBtn(label,color,onClick){
+  return btn({width:"100%",border:"none",borderRadius:"12px",background:color||C.amber,
+    color:"#fff",fontWeight:"800",fontSize:"17px",padding:"15px",marginTop:"8px"},label,onClick);
+}
+
+// ── FIELD WIDGETS ─────────────────────────────────────────────────────────────
+function fieldWrap(label,hint){
+  const w=div({marginBottom:"16px"});
+  const lb=div({marginBottom:"7px"});
+  lb.appendChild(span({fontSize:"15px",fontWeight:"700",color:C.text},label));
+  if(hint) lb.appendChild(span({fontSize:"11px",color:C.muted,marginLeft:"6px"},hint));
+  w.appendChild(lb);
+  return w;
+}
+
+function makeDropdown(label,hint,options,value,onChange,allowOther){
+  const w=fieldWrap(label,hint);
+  const wrap2=div({position:"relative"});
+  const sel=el("select",{width:"100%",background:"#1e1b18",
+    border:"2px solid "+C.border,borderRadius:"10px",color:C.text,
+    fontSize:"15px",fontWeight:"600",padding:"11px 40px 11px 14px",outline:"none"});
+  const ph=document.createElement("option");
+  ph.value="";ph.textContent="— Select —";
+  ph.style.cssText="color:rgba(240,237,232,0.45);background:#1e1b18;";
+  sel.appendChild(ph);
+  options.forEach(o=>{
+    const opt=document.createElement("option");
+    opt.value=o;opt.textContent=o;opt.style.cssText="background:#1e1b18;color:#F0EDE8;";
+    if(value===o) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  if(allowOther){
+    const oo=document.createElement("option");
+    oo.value="__other__";oo.textContent="Other (type below)";
+    oo.style.cssText="background:#1e1b18;color:#F0EDE8;";
+    if(value==="__other__") oo.selected=true;
+    sel.appendChild(oo);
+  }
+  sel.addEventListener("change",e=>{
+    sel.style.color=C.text;
+    onChange(e.target.value);
+    otherBox.style.display=e.target.value==="__other__"?"block":"none";
+  });
+  wrap2.appendChild(sel);
+  wrap2.appendChild(span({position:"absolute",right:"14px",top:"50%",
+    transform:"translateY(-50%)",pointerEvents:"none",color:C.amber,fontSize:"12px"},"▼"));
+  w.appendChild(wrap2);
+  const otherBox=inp({width:"100%",background:"rgba(255,255,255,0.07)",
+    border:"2px solid "+C.border,borderRadius:"10px",color:C.text,
+    fontSize:"15px",padding:"11px 14px",outline:"none",
+    marginTop:"8px",display:value==="__other__"?"block":"none"},
+    {type:"text",placeholder:"Type here…"});
+  otherBox.addEventListener("input",e=>onChange("__other__:"+e.target.value));
+  w.appendChild(otherBox);
+  return w;
+}
+
+function makeToggle(label,hint,options,value,onChange,critFn){
+  const w=fieldWrap(label,hint);
+  const row=div({display:"flex",gap:"7px",flexWrap:options.length>4?"wrap":"nowrap"});
+  const btns=[];
+  options.forEach(opt=>{
+    const bad=critFn&&critFn(opt),col=bad?C.red:C.green,sel=value===opt;
+    const b=btn({flex:options.length>4?"0 0 calc(50% - 4px)":"1",padding:"11px 4px",
+      border:"2px solid "+(sel?col:C.border),borderRadius:"10px",
+      background:sel?col+"25":C.surface,color:sel?col:C.muted,
+      fontWeight:"700",fontSize:"14px",textAlign:"center"},opt,()=>{
+      onChange(opt);
+      btns.forEach(({b:bb,o})=>{
+        const s=o===opt,bc=critFn&&critFn(o)?C.red:C.green;
+        bb.style.border="2px solid "+(s?bc:C.border);
+        bb.style.background=s?bc+"25":C.surface;
+        bb.style.color=s?bc:C.muted;
+      });
+    });
+    btns.push({b,o:opt});row.appendChild(b);
+  });
+  w.appendChild(row);return w;
+}
+
+function makeRating(label,hint,value,onChange){
+  const w=fieldWrap(label,hint);
+  const row=div({display:"flex",gap:"6px"});
+  const btns=[];
+  [1,2,3,4,5].forEach(n=>{
+    const col=n<=2?C.red:n===3?C.amber:C.green,sel=value===n;
+    const b=btn({flex:"1",padding:"11px 0",border:"2px solid "+(sel?col:C.border),
+      borderRadius:"10px",background:sel?col+"28":C.surface,
+      color:sel?col:C.muted,fontWeight:"800",fontSize:"17px"},String(n),()=>{
+      onChange(n);
+      btns.forEach(({b:bb,n:nn})=>{
+        const s=nn===n,bc=nn<=2?C.red:nn===3?C.amber:C.green;
+        bb.style.border="2px solid "+(s?bc:C.border);
+        bb.style.background=s?bc+"28":C.surface;
+        bb.style.color=s?bc:C.muted;
+      });
+    });
+    btns.push({b,n});row.appendChild(b);
+  });
+  w.appendChild(row);return w;
+}
+
+function makeNumber(label,hint,unit,value,onChange,critFn){
+  const w=fieldWrap(label,hint);
+  const row=div({display:"flex",alignItems:"center",gap:"8px"});
+  const i=inp({flex:"1",background:"rgba(255,255,255,0.07)",
+    border:"2px solid "+C.border,borderRadius:"10px",color:C.text,
+    fontSize:"19px",fontWeight:"700",fontFamily:"'DM Mono',monospace",
+    padding:"10px 14px",outline:"none"},{type:"number",inputmode:"decimal",placeholder:"—"});
+  i.value=value??"";
+  i.addEventListener("input",e=>{
+    onChange(e.target.value);
+    i.style.borderColor=critFn&&critFn(e.target.value)?C.red:C.border;
+    i.style.color=critFn&&critFn(e.target.value)?C.red:C.text;
+  });
+  row.appendChild(i);
+  if(unit) row.appendChild(span({fontSize:"13px",fontWeight:"700",color:C.amber,minWidth:"28px"},unit));
+  w.appendChild(row);return w;
+}
+
+function makeText(label,hint,placeholder,value,onChange,rows){
+  const w=fieldWrap(label,hint);
+  const t=ta({width:"100%",background:C.surface,border:"1.5px solid "+C.border,
+    borderRadius:"10px",color:C.text,fontSize:"14px",padding:"10px 12px",
+    outline:"none",resize:"none",display:"block"},{placeholder:placeholder||"",rows:String(rows||2)});
+  t.value=value??"";
+  t.addEventListener("input",e=>onChange(e.target.value));
+  w.appendChild(t);return w;
+}
+
+function makeDate(label,value,onChange){
+  const w=fieldWrap(label,"");
+  const i=inp({width:"100%",background:"rgba(255,255,255,0.07)",
+    border:"2px solid "+C.border,borderRadius:"10px",color:C.text,
+    fontSize:"15px",fontWeight:"600",padding:"11px 14px",outline:"none",display:"block"},
+    {type:"date"});
+  i.value=value||nowDate();
+  if(!value) onChange(nowDate());
+  i.addEventListener("change",e=>onChange(e.target.value));
+  w.appendChild(i);return w;
+}
+
+function makeTime(label,hint,value,onChange){
+  const w=fieldWrap(label,hint);
+  const row=div({display:"flex",gap:"8px"});
+  const i=inp({flex:"1",background:"rgba(255,255,255,0.07)",
+    border:"2px solid "+C.border,borderRadius:"10px",color:C.text,
+    fontSize:"17px",fontWeight:"700",fontFamily:"'DM Mono',monospace",
+    padding:"10px 14px",outline:"none"},{type:"text",placeholder:"HH:MM"});
+  i.value=value??"";
+  i.addEventListener("input",e=>onChange(e.target.value));
+  const nb=btn({background:C.amber+"18",border:"1.5px solid "+C.amber+"55",
+    borderRadius:"8px",color:C.amber,fontWeight:"800",fontSize:"12px",
+    padding:"8px 12px",whiteSpace:"nowrap"},"Now",()=>{
+    const t=nowTime();i.value=t;onChange(t);
+  });
+  row.appendChild(i);row.appendChild(nb);w.appendChild(row);return w;
+}
+
+function makeMultiSelect(label,hint,options,selected,onChange){
+  const w=fieldWrap(label,hint);
+  let current=selected||[]; // local mutable copy — kept in sync with every change
+  const chips=div({display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"8px",minHeight:"24px"});
+  function refreshChips(){
+    chips.innerHTML="";
+    const arr=current||[];
+    if(!arr.length){
+      chips.appendChild(span({fontSize:"12px",color:C.muted},"None selected"));
+      return;
+    }
+    arr.forEach(s=>{
+      const c=div({background:C.amber+"22",border:"1px solid "+C.amber+"55",
+        borderRadius:"20px",padding:"3px 8px",display:"inline-flex",alignItems:"center",gap:"4px"});
+      c.appendChild(span({fontSize:"11px",fontWeight:"700",color:C.amber},s));
+      const x=btn({background:"none",border:"none",color:C.amber,
+        padding:"0",fontSize:"13px",lineHeight:"1"},"×",()=>{
+        current=(current||[]).filter(i=>i!==s);
+        onChange(current);
+        refreshChips();
+      });
+      c.appendChild(x);chips.appendChild(c);
+    });
+  }
+  refreshChips();w.appendChild(chips);
+  w.appendChild(btn({width:"100%",background:C.surface,border:"2px solid "+C.border,
+    borderRadius:"10px",color:C.muted,fontSize:"14px",fontWeight:"700",padding:"10px"},
+    "+ Select",()=>showMultiModal(label,options,current||[],arr=>{current=arr;onChange(arr);refreshChips();})));
+  return w;
+}
+
+function showMultiModal(title,options,current,onDone){
+  const modal=document.getElementById("modal");
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  const selected=new Set(current);
+  const ttl=div({fontSize:"15px",fontWeight:"800",color:C.text,marginBottom:"12px"});
+  ttl.textContent=title;box.appendChild(ttl);
+  const ar=div({display:"flex",gap:"8px",marginBottom:"10px"});
+  ar.appendChild(btn({background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",
+    color:C.muted,fontSize:"13px",padding:"6px 12px"},"Select All",
+    ()=>{options.forEach(o=>selected.add(o));rl();}));
+  ar.appendChild(btn({background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",
+    color:C.muted,fontSize:"13px",padding:"6px 12px"},"Clear All",
+    ()=>{selected.clear();rl();}));
+  box.appendChild(ar);
+  const list=div({});box.appendChild(list);
+  function rl(){
+    list.innerHTML="";
+    options.forEach(o=>{
+      const sel=selected.has(o);
+      const row=div({display:"flex",alignItems:"center",gap:"10px",
+        padding:"9px 10px",background:sel?C.amber+"15":C.surface,
+        border:"1.5px solid "+(sel?C.amber:C.border),borderRadius:"8px",
+        marginBottom:"5px",cursor:"pointer"},null,{onClick:()=>{sel?selected.delete(o):selected.add(o);rl();}});
+      const chk=div({width:"18px",height:"18px",border:"2px solid "+(sel?C.amber:C.border),
+        borderRadius:"4px",background:sel?C.amber:"transparent",flexShrink:"0",
+        display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",color:"#000"},
+        sel?"✓":"");
+      row.appendChild(chk);
+      row.appendChild(span({fontSize:"14px",fontWeight:"600",color:sel?C.amber:C.text},o));
+      list.appendChild(row);
+    });
+  }
+  rl();
+  box.appendChild(div({height:"10px"}));
+  const doneBtn=btn({width:"100%",background:C.amber,border:"none",borderRadius:"12px",
+    color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px"},"Done",
+    ()=>{modal.classList.remove("open");onDone([...selected]);});
+  box.appendChild(doneBtn);
+  function updateDone(){doneBtn.textContent="Done — "+selected.size+" selected";}
+  const origRl=rl;
+  rl=()=>{origRl();updateDone();};
+  updateDone();
+  modal.classList.add("open");
+  modal.onclick=e=>{if(e.target===modal){modal.classList.remove("open");}};
+}
+
+// shorthand getters/setters for flat form data
+function gf(k){return S.fData[k];}
+function sf(k,v){S.fData[k]=v;scheduleDraftSave();}
+function gm(mc,k){return S.mcData[mc]?.[k];}
+function sm(mc,k,v){if(!S.mcData[mc])S.mcData[mc]={};S.mcData[mc][k]=v;scheduleDraftSave();}
+
+let _draftTimer=null;
+function scheduleDraftSave(){
+  // Debounce — save draft 2s after last change
+  clearTimeout(_draftTimer);
+  _draftTimer=setTimeout(()=>{
+    if(S.activeForm) saveDraft(S.activeForm);
+  },2000);
+}
+
+// ── SCREENS ───────────────────────────────────────────────────────────────────
+
+function renderLoading(){
+  const w=div({minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",
+    alignItems:"center",justifyContent:"center",gap:"16px"});
+  w.appendChild(div({width:"52px",height:"52px",background:C.amber,borderRadius:"14px",
+    display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",color:"#000"},"◉"));
+  w.appendChild(span({fontSize:"16px",color:C.muted},"Connecting to RF Forms…"));
+  w.appendChild(span({fontSize:"13px",color:C.muted},"Please ensure internet connection"));
+  setTimeout(()=>{
+    if(S.screen!=="loading") return;
+    w.appendChild(btn({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",
+      color:C.muted,padding:"10px 24px",fontSize:"14px",fontWeight:"700",marginTop:"8px"},
+      "Continue without sync",()=>{FB_READY=true;S.screen="login";render();}));
+  },4000);
+  setTimeout(()=>{if(S.screen==="loading"){FB_READY=true;S.screen="login";render();}},8000);
+  return w;
+}
+
+function renderLogin(){
+  const w=div({minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",
+    alignItems:"center",justifyContent:"center",padding:"0 24px"});
+  w.appendChild(div({width:"52px",height:"52px",background:C.amber,borderRadius:"14px",
+    display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",
+    marginBottom:"16px",color:"#000"},"◉"));
+  w.appendChild(span({fontSize:"22px",fontWeight:"800",marginBottom:"4px"},"RF Forms"));
+  w.appendChild(span({fontSize:"14px",color:C.muted,marginBottom:"40px"},"RF Factory · Dehradun"));
+  const dots=div({display:"flex",gap:"14px",marginBottom:S.pinError?"20px":"36px"});
+  for(let i=0;i<4;i++){
+    const filled=i<S.pin.length,err=S.pinError;
+    dots.appendChild(div({width:"14px",height:"14px",borderRadius:"50%",
+      border:"2px solid "+(err?C.red:filled?C.amber:C.border),
+      background:err?C.red:filled?C.amber:"rgba(255,255,255,0.15)",
+      transition:"background 0.15s"}));
+  }
+  w.appendChild(dots);
+  if(S.pinError){
+    const e=div({fontSize:"14px",color:C.red,marginBottom:"20px",textAlign:"center"});
+    e.textContent="Incorrect PIN";w.appendChild(e);
+  }
+  const pad=div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px",
+    width:"100%",maxWidth:"260px"});
+  [1,2,3,4,5,6,7,8,9,"",0,"⌫"].forEach(d=>{
+    if(d===""){pad.appendChild(div({padding:"18px"}));return;}
+    if(d==="⌫"){
+      pad.appendChild(btn({background:"rgba(232,92,56,0.12)",
+        border:"1.5px solid rgba(232,92,56,0.27)",borderRadius:"14px",
+        color:C.red,fontSize:"22px",fontWeight:"700",padding:"18px 0"},d,
+        ()=>ss({pin:S.pin.slice(0,-1),pinError:false})));
+      return;
+    }
+    pad.appendChild(btn({background:C.surface,border:"1.5px solid "+C.border,
+      borderRadius:"14px",color:C.text,fontSize:"22px",fontWeight:"700",padding:"18px 0"},
+      String(d),()=>handlePin(String(d))));
+  });
+  w.appendChild(pad);return w;
+}
+
+function handlePin(d){
+  if(S.pinError) ss({pinError:false,pin:""});
+  const next=S.pin+d;
+  if(next.length<4){ss({pin:next});return;}
+  const found=getStaff().find(u=>u.pin===next);
+  if(found) ss({user:{...found},screen:"home",pin:"",pinError:false});
+  else{ss({pin:next,pinError:true});setTimeout(()=>ss({pin:"",pinError:false}),800);}
+}
+
+function renderHome(){
+  const u=S.user;
+  const forms=getUserForms(u);
+  const meta=getFormsMeta();
+  const w=div({minHeight:"100vh",background:C.bg});
+  // Build header buttons
+  const hBtns=[];
+  if(u.isAdmin) hBtns.push(btn({background:"rgba(240,165,0,0.15)",
+    border:"1px solid rgba(240,165,0,0.4)",borderRadius:"8px",color:C.amber,
+    padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"⚙ Admin",
+    ()=>ss({screen:"admin",adminTab:"staff",editingStaff:null,editingFormMeta:null,editingField:null,editingFieldForm:null})));
+  if(u.canReport||u.isAdmin) hBtns.push(btn({background:"rgba(45,212,160,0.12)",
+    border:"1px solid rgba(45,212,160,0.4)",borderRadius:"8px",color:C.green,
+    padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"📊 Reports",
+    ()=>ss({screen:"reports",reportForm:null,reportRange:"today"})));
+  hBtns.push(btn({background:"rgba(232,92,56,0.1)",border:"none",borderRadius:"8px",
+    color:C.red,padding:"7px 10px",fontSize:"13px"},"Logout",
+    ()=>ss({screen:"login",user:null,pin:""})));
+  w.appendChild(makeHdr("RF Forms",u.name+" · "+u.role+(u.shift?" ("+u.shift+")":""),hBtns));
+  const bdy=wrap();
+  const today=new Date().toDateString();
+  const todayC=forms.reduce((a,fn)=>a+getFormLogs(fn).filter(l=>new Date(l.timestamp).toDateString()===today).length,0);
+  const stats=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"20px"});
+  [{label:"Today's Submissions",val:todayC,col:C.amber},{label:"Forms Available",val:forms.length,col:C.blue}].forEach(s=>{
+    const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px 16px"});
+    c.appendChild(div({fontSize:"28px",fontWeight:"800",color:s.col,fontFamily:"'DM Mono',monospace",lineHeight:"1"},String(s.val)));
+    c.appendChild(div({fontSize:"13px",color:C.muted,marginTop:"4px"},s.label));
+    stats.appendChild(c);
+  });
+  bdy.appendChild(stats);
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"Your Forms"));
+  forms.forEach(fn=>{
+    const m=meta[fn]||{icon:"◉",color:C.amber,desc:""};
+    const tl=getFormLogs(fn).filter(l=>new Date(l.timestamp).toDateString()===today);
+    const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"14px",
+      padding:"16px",marginBottom:"10px",display:"flex",alignItems:"center",
+      gap:"14px",cursor:"pointer"},null,{onClick:()=>startForm(fn)});
+    card.appendChild(div({width:"44px",height:"44px",background:(m.color||C.amber)+"22",
+      border:"1.5px solid "+(m.color||C.amber)+"55",borderRadius:"12px",
+      display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",flexShrink:"0"},
+      m.icon||"◉"));
+    const info=div({flex:"1"});
+    info.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text},fn));
+    info.appendChild(div({fontSize:"12px",color:C.muted,marginTop:"2px"},m.desc||""));
+    card.appendChild(info);
+    const right=div({textAlign:"right",flexShrink:"0"});
+    if(tl.length){
+      right.appendChild(div({fontSize:"18px",fontWeight:"800",color:m.color||C.amber,fontFamily:"'DM Mono',monospace"},String(tl.length)));
+      right.appendChild(div({fontSize:"11px",color:C.muted},"today"));
+    }
+    right.appendChild(span({fontSize:"18px",color:C.muted,display:"block",marginTop:"4px"},"→"));
+    card.appendChild(right);bdy.appendChild(card);
+  });
+  if(u.alerts||u.reports||u.isAdmin){
+    bdy.appendChild(div({height:"1px",background:C.border,margin:"20px 0"}));
+    bdy.appendChild(btn({width:"100%",background:"rgba(45,212,160,0.1)",
+      border:"2px solid rgba(45,212,160,0.4)",borderRadius:"12px",color:C.green,
+      fontWeight:"800",fontSize:"16px",padding:"14px"},"📊 Send Today's Report",sendDailyReport));
+  }
+  bdy.appendChild(div({height:"30px"}));
+  w.appendChild(bdy);return w;
+}
+
+// ── ADMIN PANEL ───────────────────────────────────────────────────────────────
+function renderAdmin(){
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr("⚙ Admin Panel",S.user.name+" · MD",[],()=>ss({screen:"home"}),"← Home"));
+  const tabs=div({display:"flex",borderBottom:"2px solid "+C.border,background:"#1a1814"});
+  [{id:"staff",label:"👥 Staff"},{id:"forms",label:"📋 Forms"},{id:"fields",label:"⚙ Fields"}].forEach(tab=>{
+    const sel=(S.adminTab||"staff")===tab.id;
+    tabs.appendChild(btn({flex:"1",padding:"14px 4px",border:"none",
+      borderBottom:"3px solid "+(sel?C.amber:"transparent"),
+      background:sel?"rgba(240,165,0,0.08)":"none",
+      color:sel?C.amber:C.text,fontWeight:"800",fontSize:"15px"},
+      tab.label,()=>ss({adminTab:tab.id,editingStaff:null,editingFormMeta:null,editingField:null})));
+  });
+  w.appendChild(tabs);
+  const bdy=wrap();
+  try{
+    const t=S.adminTab||"staff";
+    if(t==="staff") renderAdminStaff(bdy);
+    else if(t==="forms") renderAdminForms(bdy);
+    else renderAdminFields(bdy);
+  } catch(e){
+    const em=div({padding:"20px",color:C.red,fontSize:"14px",lineHeight:"1.6"});
+    em.textContent="Error loading tab: "+e.message;
+    bdy.appendChild(em);
+    console.error("Admin tab error:",e);
+  }
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+function aInp(label,key,obj,placeholder,type){
+  const rw=div({marginBottom:"12px"});
+  const lb=div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"5px"});
+  lb.textContent=label;rw.appendChild(lb);
+  const i=inp({width:"100%",background:"rgba(255,255,255,0.07)",
+    border:"1.5px solid "+C.border,borderRadius:"8px",color:C.text,
+    fontSize:"14px",padding:"9px 12px",outline:"none"},
+    {type:type||"text",placeholder:placeholder||""});
+  i.value=String(obj[key]||"");
+  i.addEventListener("input",e=>{obj[key]=e.target.value;});
+  rw.appendChild(i);return rw;
+}
+
+function renderAdminStaff(bdy){
+  const allFN=Object.keys(getFormsMeta());
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",
+    textTransform:"uppercase",marginBottom:"12px"},
+    "Manage Staff · "+getStaff().length+" members"));
+  bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
+    borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",
+    marginBottom:"16px"},"+ Add New Staff Member",
+    ()=>ss({editingStaff:{name:"",pin:"",role:"",wa:"",forms:"",lang:"en",alerts:false,reports:false,canReport:false,isAdmin:false,shift:null}})));
+
+  if(S.editingStaff!==null){
+    const es=S.editingStaff;
+    const card=div({background:"#1e1b18",border:"1px solid "+C.amber+"44",borderRadius:"14px",padding:"16px",marginBottom:"16px"});
+    card.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.amber,marginBottom:"14px"},es._key?"Edit Staff":"New Staff Member"));
+    card.appendChild(aInp("Full Name","name",es,"e.g. Ramesh Kumar"));
+    card.appendChild(aInp("PIN (4 digits)","pin",es,"e.g. 5678"));
+    card.appendChild(aInp("Role","role",es,"e.g. QA Supervisor"));
+    card.appendChild(aInp("WhatsApp Number","wa",es,"e.g. 919810000000"));
+    // Language
+    const lw=div({marginBottom:"12px"});
+    lw.appendChild(div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"6px"},"Language"));
+    const lr=div({display:"flex",gap:"8px"});
+    ["en","hi"].forEach(l=>{
+      const sel=(es.lang||"en")===l;
+      lr.appendChild(btn({flex:"1",padding:"9px",border:"2px solid "+(sel?C.amber:C.border),
+        borderRadius:"8px",background:sel?C.amber+"22":C.surface,
+        color:sel?C.amber:C.muted,fontWeight:"700",fontSize:"13px"},
+        l==="en"?"English":"हिंदी",()=>{es.lang=l;ss({editingStaff:{...es}});}));
+    });
+    lw.appendChild(lr);card.appendChild(lw);
+    // Forms
+    const curF=toArr(es.forms);
+    card.appendChild(makeMultiSelect("Forms Assigned","",["ALL",...allFN],
+      es.forms==="ALL"?["ALL"]:curF,arr=>{
+        es.forms=arr.includes("ALL")?"ALL":arr.filter(a=>a!=="ALL").join(",");
+      }));
+    // Flags
+    const fr=div({display:"flex",gap:"6px",marginBottom:"12px"});
+    [{key:"alerts",label:"Gets Alerts"},{key:"canReport",label:"View Reports"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
+      const sel=es[f.key]===true;
+      const b=btn({flex:"1",padding:"8px 4px",border:"2px solid "+(sel?C.green:C.border),
+        borderRadius:"8px",background:sel?C.green+"22":C.surface,
+        color:sel?C.green:C.muted,fontWeight:"700",fontSize:"11px"},
+        (sel?"✓ ":"")+f.label,()=>{es[f.key]=!sel;ss({editingStaff:{...es}});});
+      fr.appendChild(b);
+    });
+    card.appendChild(fr);
+    card.appendChild(aInp("Shift (optional)","shift",es,"e.g. Day Shift or Night Shift"));
+    const ar=div({display:"flex",gap:"8px"});
+    ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",
+      color:"#000",fontWeight:"800",fontSize:"14px",padding:"12px"},"Save",async()=>{
+      if(!es.name||!es.pin){toast("Name and PIN required");return;}
+      if(String(es.pin).length!==4){toast("PIN must be 4 digits");return;}
+      await fbSaveStaff(es._key,{
+        name:String(es.name),pin:String(es.pin),role:String(es.role||""),
+        wa:String(es.wa||""),forms:toStr(es.forms)||"",
+        alerts:!!es.alerts,reports:!!es.reports,canReport:!!es.canReport,
+        isAdmin:!!es.isAdmin,lang:es.lang||"en",shift:es.shift||null
+      });
+      ss({editingStaff:null});toast("✓ Staff saved");
+    }));
+    ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
+      "Cancel",()=>ss({editingStaff:null})));
+    card.appendChild(ar);bdy.appendChild(card);
+  }
+
+  getStaff().forEach(s=>{
+    const card=div({background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"12px",padding:"14px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"12px"});
+    const info=div({flex:"1"});
+    info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},s.name+(s.isAdmin?" ⚙":"")+(s.canReport?" 📊":"")));
+    info.appendChild(div({fontSize:"12px",color:C.muted},s.role+" · PIN: "+s.pin));
+    info.appendChild(div({fontSize:"11px",color:C.amber,marginTop:"2px"},"Forms: "+(s.forms==="ALL"?"All":toArr(s.forms).join(", ")||"None")));
+    card.appendChild(info);
+    const ab=div({display:"flex",gap:"6px",flexShrink:"0"});
+    ab.appendChild(btn({background:C.blue+"22",border:"1px solid "+C.blue+"44",
+      borderRadius:"8px",color:C.blue,padding:"6px 10px",fontSize:"12px"},"Edit",
+      ()=>ss({editingStaff:{...s}})));
+    if(!s.isAdmin) ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",
+      color:C.red,borderRadius:"8px",padding:"6px 10px",fontSize:"12px"},"✕",
+      async()=>{if(confirm("Remove "+s.name+"?"))await fbDeleteStaff(s._key);}));
+    card.appendChild(ab);bdy.appendChild(card);
+  });
+}
+
+function renderAdminForms(bdy){
+  bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
+    borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",
+    marginBottom:"16px"},"+ Create New Form",
+    ()=>ss({editingFormMeta:{name:"",icon:"📝",color:C.blue,desc:"",builtin:false}})));
+
+  if(S.editingFormMeta!==null){
+    const ef=S.editingFormMeta;
+    const card=div({background:"#1e1b18",border:"1px solid "+C.amber+"44",borderRadius:"14px",padding:"16px",marginBottom:"16px"});
+    card.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.amber,marginBottom:"14px"},ef._origName?"Edit Form":"New Form"));
+    card.appendChild(aInp("Form Name","name",ef,"e.g. Cold Storage Check"));
+    card.appendChild(aInp("Description","desc",ef,"Short description"));
+    // Icon
+    const iw=div({marginBottom:"12px"});
+    iw.appendChild(div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"8px"},"Icon"));
+    const ig=div({display:"flex",flexWrap:"wrap",gap:"6px"});
+    ICON_OPTS.forEach(ic=>{
+      const sel=ef.icon===ic;
+      ig.appendChild(btn({width:"36px",height:"36px",border:"2px solid "+(sel?C.amber:C.border),
+        borderRadius:"8px",background:sel?C.amber+"22":C.surface,fontSize:"18px",padding:"0"},
+        ic,()=>{ef.icon=ic;ss({editingFormMeta:{...ef}});}));
+    });
+    iw.appendChild(ig);card.appendChild(iw);
+    // Color
+    const cw=div({marginBottom:"14px"});
+    cw.appendChild(div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"8px"},"Color"));
+    const cg=div({display:"flex",flexWrap:"wrap",gap:"8px"});
+    COLOR_OPTS.forEach(col=>{
+      const sel=ef.color===col;
+      cg.appendChild(btn({width:"32px",height:"32px",border:"3px solid "+(sel?"#fff":"transparent"),
+        borderRadius:"50%",background:col,padding:"0"},"",()=>{ef.color=col;ss({editingFormMeta:{...ef}});}));
+    });
+    cw.appendChild(cg);card.appendChild(cw);
+    const ar=div({display:"flex",gap:"8px"});
+    ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",color:"#000",
+      fontWeight:"800",fontSize:"14px",padding:"12px"},"Save Form",async()=>{
+      const fname=ef.name||ef._origName;
+      if(!fname){toast("Form name required");return;}
+      await fbSaveFormMeta(fname,{icon:ef.icon||"📝",color:ef.color||C.blue,desc:ef.desc||"",builtin:false});
+      ss({editingFormMeta:null});toast("✓ Form saved");
+    }));
+    ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
+      "Cancel",()=>ss({editingFormMeta:null})));
+    card.appendChild(ar);bdy.appendChild(card);
+  }
+
+  Object.entries(getFormsMeta()).forEach(([fname,m])=>{
+    const card=div({background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"12px",padding:"14px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"12px"});
+    card.appendChild(div({width:"40px",height:"40px",background:(m.color||C.amber)+"22",
+      border:"1.5px solid "+(m.color||C.amber)+"55",borderRadius:"10px",
+      display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:"0"},m.icon||"◉"));
+    const info=div({flex:"1"});
+    info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},fname));
+    info.appendChild(div({fontSize:"12px",color:C.muted},m.desc||""));
+    if(m.builtin) info.appendChild(span({fontSize:"10px",color:C.muted,background:"rgba(255,255,255,0.07)",padding:"2px 6px",borderRadius:"4px"},"Built-in"));
+    card.appendChild(info);
+    const ab=div({display:"flex",gap:"6px",flexShrink:"0"});
+    ab.appendChild(btn({background:C.blue+"22",border:"1px solid "+C.blue+"44",borderRadius:"8px",
+      color:C.blue,padding:"6px 10px",fontSize:"12px"},"Edit",
+      ()=>ss({editingFormMeta:{...m,_origName:fname,name:fname}})));
+    if(!m.builtin) ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",
+      color:C.red,borderRadius:"8px",padding:"6px 10px",fontSize:"12px"},"✕",
+      async()=>{if(confirm("Delete form "+fname+"?"))await fbDeleteFormMeta(fname);}));
+    card.appendChild(ab);bdy.appendChild(card);
+  });
+}
+
+function renderAdminFields(bdy){
+  const allForms=Object.keys(getFormsMeta());
+  bdy.appendChild(makeDropdown("Select Form","",allForms,S.editingFieldForm||"",
+    v=>ss({editingFieldForm:v,editingField:null})));
+  if(!S.editingFieldForm) return;
+  const fn=S.editingFieldForm;
+  const meta=getFormsMeta()[fn]||{};
+  bdy.appendChild(div({fontSize:"13px",fontWeight:"800",color:meta.color||C.amber,
+    marginBottom:"12px"},fn+" — Custom Fields"));
+  bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
+    borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"14px",padding:"12px",
+    marginBottom:"16px"},"+ Add Custom Field",
+    ()=>ss({editingField:{label:"",type:"text",options:"",hint:"",unit:"",required:false,critical:false}})));
+
+  if(S.editingField!==null){
+    const ef=S.editingField;
+    const card=div({background:"#1e1b18",border:"1px solid "+C.amber+"44",borderRadius:"14px",padding:"16px",marginBottom:"16px"});
+    card.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.amber,marginBottom:"14px"},ef._key?"Edit Field":"New Field"));
+    card.appendChild(aInp("Field Label","label",ef,"e.g. Temperature at Loading"));
+    // Type grid
+    const tw=div({marginBottom:"12px"});
+    tw.appendChild(div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"6px"},"Field Type"));
+    const tg=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"});
+    FIELD_TYPES.forEach(t=>{
+      const sel=(ef.type||"text")===t;
+      tg.appendChild(btn({padding:"8px",border:"2px solid "+(sel?C.amber:C.border),
+        borderRadius:"8px",background:sel?C.amber+"22":C.surface,
+        color:sel?C.amber:C.muted,fontWeight:"700",fontSize:"12px"},
+        FIELD_TYPE_LABELS[t],()=>{ef.type=t;ss({editingField:{...ef}});}));
+    });
+    tw.appendChild(tg);card.appendChild(tw);
+    if(["dropdown","toggle","multi_select"].includes(ef.type||"text"))
+      card.appendChild(aInp("Options (comma-separated)","options",ef,"Option 1, Option 2, Option 3"));
+    card.appendChild(aInp("Hint Text (optional)","hint",ef,"Helper text under label"));
+    if((ef.type||"text")==="number")
+      card.appendChild(aInp("Unit (optional)","unit",ef,"e.g. °C, kg, pcs"));
+    const fr=div({display:"flex",gap:"8px",marginBottom:"12px"});
+    [{key:"required",label:"Required"},{key:"critical",label:"Sends Alert"}].forEach(f=>{
+      const sel=ef[f.key]===true;
+      fr.appendChild(btn({flex:"1",padding:"8px",border:"2px solid "+(sel?C.green:C.border),
+        borderRadius:"8px",background:sel?C.green+"22":C.surface,
+        color:sel?C.green:C.muted,fontWeight:"700",fontSize:"12px"},
+        (sel?"✓ ":"")+f.label,()=>{ef[f.key]=!sel;ss({editingField:{...ef}});}));
+    });
+    card.appendChild(fr);
+    const ar=div({display:"flex",gap:"8px"});
+    ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",color:"#000",
+      fontWeight:"800",fontSize:"14px",padding:"12px"},"Save Field",async()=>{
+      if(!ef.label){toast("Field label required");return;}
+      await fbSaveField(fn,ef);ss({editingField:null});toast("✓ Field saved");
+    }));
+    ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
+      borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
+      "Cancel",()=>ss({editingField:null})));
+    card.appendChild(ar);bdy.appendChild(card);
+  }
+
+  // Load existing custom fields async
+  const fieldsArea=div({});bdy.appendChild(fieldsArea);
+  fbGetFields(fn).then(fields=>{
+    if(!fields.length){
+      fieldsArea.appendChild(div({textAlign:"center",color:C.muted,padding:"20px 0",fontSize:"13px"},"No custom fields yet"));
+      return;
+    }
+    fieldsArea.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,
+      letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Custom Fields"));
+    fields.forEach(f=>{
+      const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",
+        padding:"12px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"10px"});
+      const info=div({flex:"1"});
+      info.appendChild(div({fontSize:"13px",fontWeight:"800",color:C.text},f.label));
+      info.appendChild(div({fontSize:"11px",color:C.muted},(FIELD_TYPE_LABELS[f.type]||f.type)+(f.unit?" · "+f.unit:"")+(f.required?" · Required":"")));
+      c.appendChild(info);
+      const ab=div({display:"flex",gap:"6px",flexShrink:"0"});
+      ab.appendChild(btn({background:C.blue+"22",border:"1px solid "+C.blue+"44",borderRadius:"8px",
+        color:C.blue,padding:"5px 9px",fontSize:"11px"},"Edit",
+        ()=>ss({editingField:{...f}})));
+      ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
+        borderRadius:"8px",padding:"5px 9px",fontSize:"11px"},"✕",
+        async()=>{if(confirm("Delete field?"))await fbDeleteField(fn,f._key);}));
+      c.appendChild(ab);fieldsArea.appendChild(c);
+    });
+  }).catch(e=>console.error("Fields load error:",e));
+}
+
+// ── FORM FILLING ──────────────────────────────────────────────────────────────
+async function startForm(fn){
+  // Reset state first
+  S.activeForm=fn;
+  S.fData={};S.mcData={};S.mcParams={};
+  S.activeMC=fn==="QC Form"?QC_LINES[0]:fn==="Machine Status"?MACHINES[0]:null;
+  S.pestMode="Vendor Service";S.visitorEntries=[];S.groomingData={};
+  S.breakdownIssues=[];S.breakdownDetails={};S.maintenanceWorks=[];
+  if(fn==="QC Form"){
+    S.qcLineData={};S.qcEosData={wastage:{},oil:{},bestLine:"",training:"",issues:""};
+    S.qcSaving=false;S.qcSaved=false;S.qcAlertSent=false;
+    if(S.qcRound==="Current Time") S.qcInspTime=nowTime();
+  }
+  S.screen="form";
+
+  // Try to load today's draft
+  const savedAt=await loadDraft(fn);
+  if(savedAt){
+    // Show toast that draft was restored
+    const t=new Date(savedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+    toast("📂 Draft restored from "+t,3000);
+  }
+  render();
+}
+
+function renderForm(){
+  const fn=S.activeForm;
+  const meta=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr(fn,S.user.name,
+    [span({fontSize:"13px",color:meta.color||C.amber,fontWeight:"700"},meta.icon||"◉")],
+    ()=>{if(S.activeForm)saveDraft(S.activeForm);ss({screen:"home"});},"← Back"));
+  w.appendChild(div({height:"3px",background:meta.color||C.amber}));
+  const bdy=wrap();
+  const map={
+    "QC Form":renderQCForm,"Training Log":renderTrainingLog,
+    "Pest Control":renderPestControl,"Metal Detector Calibration":renderMDCalib,
+    "Grooming":renderGrooming,"Housekeeping":renderHousekeeping,
+    "Machine Status":renderMachineStatus,"Breakdown Report":renderBreakdown,
+    "Maintenance Report":renderMaintenance,"Delivery Checklist":renderDelivery,
+    "Visitor Log":renderVisitorLog,"Equipment Service Record":renderEquipService,
+  };
+  if(map[fn]) map[fn](bdy,meta);
+  else renderCustomForm(bdy,meta,fn);
+  w.appendChild(bdy);return w;
+}
+
+function appendCustomFields(bdy,fn){
+  // Insert a placeholder BEFORE the submit button so custom fields appear above it
+  const placeholder=div({});
+  bdy.insertBefore(placeholder,bdy.lastChild);
+  fbGetFields(fn).then(fields=>{
+    if(!fields.length) return;
+    function renderField(f){
+      const opts=(f.options||"").split(",").map(s=>s.trim()).filter(Boolean);
+      if(f.type==="dropdown") return makeDropdown(f.label,f.hint||"",opts,gf(f.label),v=>sf(f.label,v));
+      if(f.type==="toggle") return makeToggle(f.label,f.hint||"",opts,gf(f.label),v=>sf(f.label,v));
+      if(f.type==="multi_select") return makeMultiSelect(f.label,f.hint||"",opts,gf(f.label)||[],v=>sf(f.label,v));
+      if(f.type==="rating5") return makeRating(f.label,f.hint||"",gf(f.label),v=>sf(f.label,v));
+      if(f.type==="number") return makeNumber(f.label,f.hint||"",f.unit||"",gf(f.label),v=>sf(f.label,v));
+      if(f.type==="date") return makeDate(f.label,gf(f.label),v=>sf(f.label,v));
+      if(f.type==="time") return makeTime(f.label,f.hint||"",gf(f.label),v=>sf(f.label,v));
+      return makeText(f.label,f.hint||"","",gf(f.label),v=>sf(f.label,v));
+    }
+    fields.forEach(f=>placeholder.appendChild(renderField(f)));
+  }).catch(e=>console.error("Custom fields error:",e));
+}
+
+function renderCustomForm(bdy,meta,fn){
+  fbGetFields(fn).then(fields=>{
+    if(!fields.length){
+      bdy.appendChild(div({textAlign:"center",color:C.muted,padding:"40px 0",fontSize:"14px"},
+        "No fields yet. Admin → Fields → Select this form → Add fields."));return;
+    }
+    fields.forEach(f=>{
+      const opts=(f.options||"").split(",").map(s=>s.trim()).filter(Boolean);
+      if(f.type==="dropdown") bdy.appendChild(makeDropdown(f.label,f.hint||"",opts,gf(f.label),v=>sf(f.label,v)));
+      else if(f.type==="toggle") bdy.appendChild(makeToggle(f.label,f.hint||"",opts,gf(f.label),v=>sf(f.label,v)));
+      else if(f.type==="multi_select") bdy.appendChild(makeMultiSelect(f.label,f.hint||"",opts,gf(f.label)||[],v=>sf(f.label,v)));
+      else if(f.type==="rating5") bdy.appendChild(makeRating(f.label,f.hint||"",gf(f.label),v=>sf(f.label,v)));
+      else if(f.type==="number") bdy.appendChild(makeNumber(f.label,f.hint||"",f.unit||"",gf(f.label),v=>sf(f.label,v)));
+      else if(f.type==="date") bdy.appendChild(makeDate(f.label,gf(f.label),v=>sf(f.label,v)));
+      else if(f.type==="time") bdy.appendChild(makeTime(f.label,f.hint||"",gf(f.label),v=>sf(f.label,v)));
+      else bdy.appendChild(makeText(f.label,f.hint||"","",gf(f.label),v=>sf(f.label,v)));
+    });
+    bdy.appendChild(submitBtn("Submit "+fn,meta.color||C.amber,async()=>{
+      const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:fn,user:S.user.name,role:S.user.role,data:{...S.fData}};
+      await trySave(fn,()=>fbAddLog(fn,entry),()=>{clearDraft(fn);toast("✓ "+fn+" submitted!");ss({screen:"home"});});
+    }));
+    bdy.appendChild(div({height:"40px"}));
+  });
+}
+
+// ── BUILT-IN FORM RENDERERS ───────────────────────────────────────────────────
+function renderQCForm(bdy,meta){
+  const hi=S.user.lang==="hi";
+  // If End of Shift — render EOS form instead
+  if(S.qcRound==="End of Shift"){renderQCEOS(bdy,meta);return;}
+
+  const mc=S.activeMC||QC_LINES[0];
+  const idx=QC_LINES.indexOf(mc);
+  const lineData=S.qcLineData;
+  if(!lineData[mc]) lineData[mc]={};
+  const curData=lineData[mc];
+
+  // Round selector
+  const rsec=div({marginBottom:"14px"});
+  const rlbl=div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"8px"});
+  rlbl.textContent=hi?"राउंड चुनें":"Select Round";rsec.appendChild(rlbl);
+  const rgrid=div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"7px"});
+  const rBtns=[];
+  SHIFT_ROUNDS.forEach(r=>{
+    const col=ROUND_COLORS[r],sel=S.qcRound===r;
+    const hiLabels={"Start of Shift":"शिफ्ट शुरू","Current Time":"अभी","End of Shift":"शिफ्ट समाप्त"};
+    const label=hi?(hiLabels[r]||r):r;
+    const b=btn({background:sel?col+"20":C.surface,border:"2px solid "+(sel?col:C.border),
+      borderRadius:"10px",color:sel?col:C.text,padding:"9px 4px",fontSize:"13px",
+      fontWeight:"800",textAlign:"center",lineHeight:"1.4"},label,()=>{
+      S.qcRound=r;
+      if(r==="Current Time") S.qcInspTime=nowTime();
+      rBtns.forEach(({b:bb,raw})=>{const s=raw===r,c=ROUND_COLORS[raw];bb.style.background=s?c+"20":C.surface;bb.style.border="2px solid "+(s?c:C.border);bb.style.color=s?c:C.text;});
+      timeEl.textContent="⏱ "+(S.qcInspTime||nowTime());
+      // If EOS selected — re-render to show EOS form
+      if(r==="End of Shift") ss({activeForm:"QC Form"});
+    });
+    rBtns.push({b,raw:r});rgrid.appendChild(b);
+  });
+  rsec.appendChild(rgrid);bdy.appendChild(rsec);
+
+  // Inspection time display
+  const timeEl=div({fontSize:"13px",color:C.amber,fontWeight:"700",
+    marginBottom:"14px",textAlign:"center"});
+  timeEl.textContent="⏱ "+(S.qcInspTime||nowTime());
+  bdy.appendChild(timeEl);
+  if(!S.qcInspTime) S.qcInspTime=nowTime();
+
+  // Line tabs
+  const tabs=div({display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px",
+    paddingBottom:"12px",borderBottom:"1px solid "+C.border});
+  QC_LINES.forEach(ln=>{
+    const ld=lineData[ln]||{};
+    const filled=Object.keys(ld).filter(k=>ld[k]!==undefined&&ld[k]!=="").length;
+    const isA=ln===mc,isDone=filled>=8;
+    tabs.appendChild(btn({padding:"7px 12px",background:isA?C.amber+"18":isDone?"rgba(45,212,160,0.12)":C.surface,
+      border:"2px solid "+(isA?C.amber:isDone?C.green:C.border),borderRadius:"20px",
+      color:isA?C.amber:isDone?C.green:C.muted,fontWeight:"800",fontSize:"13px"},
+      ln+(isDone?" ✓":""),()=>{saveDraft("QC Form");ss({activeMC:ln});}));
+  });
+  bdy.appendChild(tabs);
+
+  // Current line label
+  bdy.appendChild(div({background:C.amber+"12",border:"1px solid "+C.amber+"44",
+    borderRadius:"12px",padding:"12px 16px",marginBottom:"20px",
+    fontSize:"17px",fontWeight:"800",color:C.amber},mc));
+
+  // Fields — update lineData directly (no ss to avoid keyboard dismissal)
+  function sq(k,v){if(!lineData[mc])lineData[mc]={};lineData[mc][k]=v;scheduleDraftSave();}
+  function gq(k){return lineData[mc]?.[k];}
+
+  bdy.appendChild(secHdr(hi?"रोटी गुणवत्ता":"Roti Quality",C.amber,"◉"));
+  bdy.appendChild(makeRating(hi?"रंग":"Color",hi?"1=फीका · 5=सुनहरा":"1=pale · 5=golden",gq("color"),v=>sq("color",v)));
+  bdy.appendChild(makeToggle(hi?"फुलाव":"Puff","",hi?["हाँ","नहीं"]:["Yes","No"],gq("puff"),v=>sq("puff",v)));
+  bdy.appendChild(makeToggle(hi?"बनावट":"Texture","",hi?["नरम","कठोर"]:["Soft","Hard"],gq("texture"),v=>sq("texture",v)));
+  bdy.appendChild(makeToggle(hi?"व्यास":"Diameter","",hi?["ठीक है","ठीक नहीं"]:["OK","Not OK"],gq("diameter"),v=>sq("diameter",v)));
+  bdy.appendChild(makeNumber(hi?"वजन":"Weight",hi?"5 रोटियों का औसत":"Avg of 5 rotis","g",gq("weight"),v=>sq("weight",v)));
+  bdy.appendChild(secHdr(hi?"तापमान":"Temperature",C.red,"⊕"));
+  bdy.appendChild(makeNumber(hi?"कन्वेयर":"Stack Temp","","°C",gq("stack_temp"),v=>sq("stack_temp",v)));
+  bdy.appendChild(makeNumber(hi?"पैकिंग तापमान":"Pre-Pack Temp",hi?"≤40°C":"Must be ≤40°C","°C",gq("prepack_temp"),v=>sq("prepack_temp",v),v=>parseFloat(v)>40));
+  bdy.appendChild(secHdr(hi?"पैकेजिंग":"Packaging",C.blue,"▣"));
+  bdy.appendChild(makeNumber(hi?"पैक वजन":"Pack Weight","","g",gq("pack_weight"),v=>sq("pack_weight",v)));
+  bdy.appendChild(makeToggle(hi?"बटर पेपर":"Butter Paper","",hi?["हाँ","नहीं"]:["Yes","No"],gq("butter_paper"),v=>sq("butter_paper",v)));
+  bdy.appendChild(secHdr(hi?"स्वच्छता":"Hygiene",C.green,"✦"));
+  bdy.appendChild(makeRating(hi?"सतह":"Surface","",gq("surface"),v=>sq("surface",v)));
+  bdy.appendChild(makeRating(hi?"कन्वेयर":"Conveyor","",gq("conveyor"),v=>sq("conveyor",v)));
+  bdy.appendChild(makeRating(hi?"फर्श":"Floor","",gq("floor"),v=>sq("floor",v)));
+  bdy.appendChild(makeToggle(hi?"कीट":"Pest Sightings","",hi?["नहीं","हाँ"]:["No","Yes"],gq("pest"),v=>sq("pest",v),v=>v==="Yes"||v==="हाँ"));
+  bdy.appendChild(makeText(hi?"टिप्पणी":"Comments","","Observations…",gq("hygiene_comments"),v=>sq("hygiene_comments",v)));
+  bdy.appendChild(secHdr(hi?"कर्मचारी":"Employee Hygiene",C.purple,"◈"));
+  bdy.appendChild(makeToggle(hi?"PPE":"PPE Compliance","",hi?["हाँ","नहीं"]:["Yes","No"],gq("ppe"),v=>sq("ppe",v),v=>v==="No"||v==="नहीं"));
+  bdy.appendChild(makeRating(hi?"वर्दी":"Uniform Score","",gq("uniform"),v=>sq("uniform",v)));
+  bdy.appendChild(makeToggle(hi?"गहने":"Jewellery Worn","",hi?["नहीं","हाँ"]:["No","Yes"],gq("jewellery"),v=>sq("jewellery",v),v=>v==="Yes"||v==="हाँ"));
+  bdy.appendChild(makeText(hi?"उल्लंघनकर्ता":"Defaulter Names","","Names of non-compliant staff…",gq("defaulters"),v=>sq("defaulters",v)));
+
+  appendCustomFields(bdy,"QC Form");
+
+  // Submit button — always visible
+  bdy.appendChild(submitBtn(hi?"QC फॉर्म जमा करें":"Submit QC Form",C.amber,async()=>{
+    const fails=[];
+    Object.entries(lineData).forEach(([ln,d])=>{
+      if(d.prepack_temp&&parseFloat(d.prepack_temp)>40) fails.push(ln+" Pre-pack >40°C");
+      if(d.pest==="Yes"||d.pest==="हाँ") fails.push(ln+" Pest sighting");
+      if(d.ppe==="No"||d.ppe==="नहीं") fails.push(ln+" PPE fail");
+      if(d.jewellery==="Yes"||d.jewellery==="हाँ") fails.push(ln+" Jewellery worn");
+    });
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"QC Form",
+      user:S.user.name,role:S.user.role,round:S.qcRound,inspectionTime:S.qcInspTime,
+      lineData:JSON.parse(JSON.stringify(lineData))};
+    await trySave("QC Form",()=>fbAddLog("QC Form",entry),()=>{
+      sendAlerts(fails,"QC Form",S.user.name);
+      afterSubmit("QC Form");
+    });
+  }));
+
+  // Prev / Next navigation
+  const nav=div({display:"flex",gap:"10px",marginTop:"10px"});
+  if(idx>0) nav.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
+    "← "+QC_LINES[idx-1],()=>{saveDraft("QC Form");ss({activeMC:QC_LINES[idx-1]});}));
+  if(idx<QC_LINES.length-1) nav.appendChild(btn({flex:"1",background:C.surface,
+    border:"1px solid "+C.amber+"66",borderRadius:"10px",color:C.amber,
+    fontWeight:"700",fontSize:"14px",padding:"12px"},
+    QC_LINES[idx+1]+" →",()=>{saveDraft("QC Form");ss({activeMC:QC_LINES[idx+1]});}));
+  bdy.appendChild(nav);
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderQCEOS(bdy,meta){
+  const hi=S.user.lang==="hi";
+  const eos=S.qcEosData;
+  function secT(icon,label,color){
+    const r=div({display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px"});
+    r.appendChild(span({fontSize:"18px"},icon));
+    r.appendChild(span({fontSize:"13px",fontWeight:"800",color,letterSpacing:"0.07em",textTransform:"uppercase"},label));
+    r.appendChild(div({flex:"1",height:"1px",background:color+"33",marginLeft:"4px"}));
+    return r;
+  }
+  // Wastage
+  bdy.appendChild(secT("⚖",hi?"बर्बादी (kg) — मशीन-वार":"Wastage (kg) — Machine-wise",C.amber));
+  QC_LINES.forEach(ln=>{
+    const lb=div({marginBottom:"16px"});
+    lb.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text,marginBottom:"8px"},ln));
+    LINE_MACHINES[ln].forEach(mc=>{
+      const row=div({display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"});
+      row.appendChild(span({fontSize:"14px",color:C.muted,minWidth:"60px"},mc));
+      const i=inp({flex:"1",background:"rgba(255,255,255,0.07)",border:"2px solid "+C.border,
+        borderRadius:"10px",color:C.text,fontSize:"18px",fontWeight:"700",
+        fontFamily:"'DM Mono',monospace",padding:"10px 14px",outline:"none"},
+        {type:"number",inputmode:"decimal",min:"0",max:"999",step:"0.1",placeholder:"0.0"});
+      i.value=eos.wastage?.[ln]?.[mc]??"";
+      i.addEventListener("input",e=>{if(!eos.wastage[ln])eos.wastage[ln]={};eos.wastage[ln][mc]=e.target.value;});
+      row.appendChild(i);
+      row.appendChild(span({fontSize:"14px",fontWeight:"700",color:C.amber},"kg"));
+      lb.appendChild(row);
+    });
+    bdy.appendChild(lb);
+  });
+  // Oil boxes
+  bdy.appendChild(secT("🛢",hi?"तेल के डिब्बे भरे":"Oil Boxes Filled",C.blue));
+  QC_LINES.forEach(ln=>{
+    const lb=div({marginBottom:"12px"});
+    lb.appendChild(div({fontSize:"15px",fontWeight:"700",color:C.text,marginBottom:"6px"},ln));
+    const row=div({display:"flex",gap:"8px"});
+    const oBtns=[];
+    [hi?"हाँ":"Yes",hi?"नहीं":"No"].forEach((opt,oi)=>{
+      const raw=["Yes","No"][oi];
+      const sel=eos.oil?.[ln]===raw,col=raw==="No"?C.red:C.green;
+      const b=btn({flex:"1",padding:"10px 0",border:"2px solid "+(sel?col:C.border),
+        borderRadius:"10px",background:sel?col+"25":C.surface,
+        color:sel?col:C.muted,fontWeight:"700",fontSize:"16px"},opt,()=>{
+        eos.oil={...eos.oil,[ln]:raw};
+        oBtns.forEach(({b:bb,r})=>{const s=r===raw,c=r==="No"?C.red:C.green;bb.style.border="2px solid "+(s?c:C.border);bb.style.background=s?c+"25":C.surface;bb.style.color=s?c:C.muted;});
+      });
+      oBtns.push({b,r:raw});row.appendChild(b);
+    });
+    lb.appendChild(row);bdy.appendChild(lb);
+  });
+  // Best line
+  bdy.appendChild(secT("🏆",hi?"शिफ्ट की सर्वश्रेष्ठ लाइन":"Best Line of Shift",C.green));
+  const blRow=div({display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"24px"});
+  const blBtns=[];
+  QC_LINES.forEach(ln=>{
+    const sel=eos.bestLine===ln;
+    const b=btn({padding:"10px 18px",border:"2px solid "+(sel?C.green:C.border),
+      borderRadius:"10px",background:sel?C.green+"22":C.surface,
+      color:sel?C.green:C.muted,fontWeight:"800",fontSize:"16px"},
+      (sel?"🏆 ":"")+ln,()=>{
+      eos.bestLine=ln;
+      blBtns.forEach(({b:bb,l})=>{const s=l===ln;bb.style.border="2px solid "+(s?C.green:C.border);bb.style.background=s?C.green+"22":C.surface;bb.style.color=s?C.green:C.muted;bb.textContent=(s?"🏆 ":"")+l;});
+    });
+    blBtns.push({b,l:ln});blRow.appendChild(b);
+  });
+  bdy.appendChild(blRow);
+  // Training
+  bdy.appendChild(secT("📋",hi?"प्रशिक्षण आवश्यक":"Training Required",C.purple));
+  const trta=el("textarea",{width:"100%",background:C.surface,border:"1.5px solid "+C.border,
+    borderRadius:"10px",color:C.text,fontSize:"15px",padding:"12px 14px",
+    outline:"none",resize:"none",display:"block",marginBottom:"16px"},null,
+    {placeholder:hi?"प्रशिक्षण की जरूरत वाले कर्मचारियों के नाम…":"Staff names who need training…",rows:"3"});
+  trta.value=eos.training||"";
+  trta.addEventListener("input",e=>{eos.training=e.target.value;});
+  bdy.appendChild(trta);
+  // Issues
+  bdy.appendChild(secT("⚠",hi?"कोई समस्या":"Any Issues",C.red));
+  const ista=el("textarea",{width:"100%",background:C.surface,border:"1.5px solid "+C.border,
+    borderRadius:"10px",color:C.text,fontSize:"15px",padding:"12px 14px",
+    outline:"none",resize:"none",display:"block",marginBottom:"16px"},null,
+    {placeholder:hi?"कोई समस्या, टिप्पणी या अनुवर्ती कार्रवाई…":"Any issues, observations or follow-up actions…",rows:"3"});
+  ista.value=eos.issues||"";
+  ista.addEventListener("input",e=>{eos.issues=e.target.value;});
+  bdy.appendChild(ista);
+  // Submit EOS
+  bdy.appendChild(submitBtn(hi?"शिफ्ट बंद करें और जमा करें":"Close Shift & Submit",C.purple,async()=>{
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"QC Form",
+      user:S.user.name,role:S.user.role,round:"End of Shift",
+      inspectionTime:S.qcInspTime,
+      lineData:JSON.parse(JSON.stringify(S.qcLineData)),
+      eosData:JSON.parse(JSON.stringify(eos))};
+    await trySave("QC Form",()=>fbAddLog("QC Form",entry),()=>{
+      clearDraft("QC Form");
+      toast("✓ "+(hi?"शिफ्ट बंद हो गई!":"Shift Closed!"));
+      ss({screen:"home",qcLineData:{},qcEosData:{wastage:{},oil:{},bestLine:"",training:"",issues:""}});
+    });
+  }));
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderTrainingLog(bdy,meta){
+  bdy.appendChild(secHdr("Session Details",meta.color,"📋"));
+  bdy.appendChild(makeDate("Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown("Trainer Name","",TRAINER_OPTIONS,gf("trainer"),v=>sf("trainer",v),true));
+  bdy.appendChild(makeDropdown("Topic Covered","",TRAINING_TOPICS,gf("topic"),v=>sf("topic",v),true));
+  bdy.appendChild(makeDropdown("Duration","",TRAINING_DURATIONS,gf("duration"),v=>sf("duration",v),true));
+  bdy.appendChild(div({fontSize:"15px",fontWeight:"700",color:C.text,marginBottom:"8px"},"Attendees"));
+  const grpGrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"12px"});
+  Object.entries(ATTENDEE_GROUPS).forEach(([grp,members])=>{
+    grpGrid.appendChild(btn({padding:"9px 8px",background:C.surface,border:"1.5px solid "+C.border,
+      borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"13px",textAlign:"center"},grp,
+      ()=>showMultiModal(grp,members,gf("attendees")||[],arr=>sf("attendees",arr))));
+  });
+  bdy.appendChild(grpGrid);
+  const attWrap=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"10px 12px",marginBottom:"16px"});
+  attWrap.appendChild(div({fontSize:"12px",fontWeight:"700",color:C.muted,marginBottom:"6px"},"Selected Attendees"));
+  const attList=div({});
+  function showAtt(){
+    attList.innerHTML="";
+    const arr=gf("attendees")||[];
+    if(!arr.length){attList.appendChild(span({fontSize:"13px",color:C.muted},"None"));return;}
+    arr.forEach(n=>{const c=span({fontSize:"12px",fontWeight:"700",color:meta.color,background:meta.color+"22",border:"1px solid "+meta.color+"55",borderRadius:"20px",padding:"3px 10px",display:"inline-block",margin:"2px"},n);attList.appendChild(c);});
+  }
+  showAtt();attWrap.appendChild(attList);bdy.appendChild(attWrap);
+  bdy.appendChild(makeDate("Next Training Due",gf("next_due"),v=>sf("next_due",v)));
+  bdy.appendChild(secHdr("Assessment",C.green,"✦"));
+  bdy.appendChild(makeRating("Score","1=poor · 5=excellent",gf("score"),v=>sf("score",v)));
+  bdy.appendChild(makeText("Remarks","","Key takeaways…",gf("remarks"),v=>sf("remarks",v)));
+  bdy.appendChild(submitBtn("Submit Training Log",meta.color,async()=>{
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Training Log",user:S.user.name,role:S.user.role,data:{...S.fData}};
+    await trySave("Training Log",()=>fbAddLog("Training Log",entry),()=>afterSubmit("Training Log"));
+  }));
+  appendCustomFields(bdy,"Training Log");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderPestControl(bdy,meta){
+  const modeRow=div({display:"flex",gap:"8px",marginBottom:"20px"});
+  ["Vendor Service","Internal Check"].forEach(mode=>{
+    const sel=S.pestMode===mode;
+    modeRow.appendChild(btn({flex:"1",padding:"12px",border:"2px solid "+(sel?meta.color:C.border),
+      borderRadius:"10px",background:sel?meta.color+"22":C.surface,
+      color:sel?meta.color:C.muted,fontWeight:"800",fontSize:"14px"},
+      mode,()=>ss({pestMode:mode,fData:{}})));
+  });
+  bdy.appendChild(modeRow);
+  if(S.pestMode==="Vendor Service"){
+    bdy.appendChild(secHdr("Vendor Details",meta.color,"🐛"));
+    bdy.appendChild(makeDate("Service Date",gf("date"),v=>sf("date",v)));
+    bdy.appendChild(makeDropdown("Service Type","",["Weekly","On-complaint","Emergency","Monthly","Quarterly"],gf("svc_type"),v=>sf("svc_type",v)));
+    bdy.appendChild(makeDropdown("Serviced By","",PEST_VENDORS,gf("vendor"),v=>sf("vendor",v),true));
+    bdy.appendChild(makeText("Areas Covered","","Kitchen, store, floor…",gf("areas"),v=>sf("areas",v)));
+    bdy.appendChild(makeMultiSelect("Issues Raised by RF","",["Pest sightings — Rodents","Pest sightings — Cockroaches","Pest sightings — Ants","Pest sightings — Spiders","Pest sightings — Flies","Poor service quality","Other"],gf("issues_rf")||[],arr=>sf("issues_rf",arr)));
+    bdy.appendChild(makeText("Solution / Commitment","","What vendor did…",gf("solution"),v=>sf("solution",v)));
+    bdy.appendChild(makeDateField("Next Service Due",gf("next_due"),v=>sf("next_due",v)));
+    bdy.appendChild(makeToggle("Service Card / Photo","",["Received","Not Received","Photo Taken"],gf("photo_status"),v=>sf("photo_status",v)));
+    bdy.appendChild(makeText("Remarks","","Other notes…",gf("remarks"),v=>sf("remarks",v)));
+  } else {
+    bdy.appendChild(secHdr("Internal Check",meta.color,"🔍"));
+    bdy.appendChild(makeDate("Check Date",gf("date"),v=>sf("date",v)));
+    bdy.appendChild(makeText("Checked By","","Staff name",gf("checked_by"),v=>sf("checked_by",v),1));
+    bdy.appendChild(makeDropdown("Cockroach Sighting","",["None","1-2","3-5","5+"],gf("cockroach"),v=>sf("cockroach",v)));
+    bdy.appendChild(makeDropdown("Rodent Signs","",["None","Droppings","Live","Other"],gf("rodent"),v=>sf("rodent",v)));
+    bdy.appendChild(makeDropdown("Flies / Insects","",["None","Few","Many"],gf("flies"),v=>sf("flies",v)));
+    bdy.appendChild(makeMultiSelect("Pest Types Seen","",PEST_TYPES,gf("pest_types")||[],arr=>sf("pest_types",arr)));
+    bdy.appendChild(makeToggle("Bait Stations OK","",["Yes","No","Not Checked"],gf("bait"),v=>sf("bait",v)));
+    bdy.appendChild(makeToggle("Traps OK","",["Yes","No","Not Checked"],gf("traps"),v=>sf("traps",v)));
+    bdy.appendChild(makeText("Area of Sighting","","Where pest was seen…",gf("pest_area"),v=>sf("pest_area",v)));
+    bdy.appendChild(makeText("Action Taken","","Immediate action…",gf("action"),v=>sf("action",v)));
+    bdy.appendChild(makeDate("Next Check Due",gf("next_check"),v=>sf("next_check",v)));
+  }
+  bdy.appendChild(submitBtn("Submit Pest Control",meta.color,async()=>{
+    const fails=[];
+    if(S.pestMode==="Internal Check"){
+      if(gf("cockroach")&&gf("cockroach")!=="None") fails.push("Cockroach: "+gf("cockroach"));
+      if(gf("rodent")&&gf("rodent")!=="None") fails.push("Rodent: "+gf("rodent"));
+      if(gf("flies")==="Many") fails.push("Fly infestation");
+    }
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Pest Control",user:S.user.name,role:S.user.role,mode:S.pestMode,data:{...S.fData}};
+    await trySave("Pest Control",()=>fbAddLog("Pest Control",entry),()=>{
+      sendAlerts(fails,"Pest Control",S.user.name);
+      afterSubmit("Pest Control");
+    });
+  }));
+  appendCustomFields(bdy,"Pest Control");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderMDCalib(bdy,meta){
+  bdy.appendChild(secHdr("Machine & Date",meta.color,"🔩"));
+  bdy.appendChild(makeDate("Calibration Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown("Machine ID","",["MD-1","MD-2","MD-3"],gf("machine_id"),v=>sf("machine_id",v)));
+  bdy.appendChild(makeText("Tested By","","Operator name",gf("tested_by"),v=>sf("tested_by",v),1));
+  bdy.appendChild(secHdr("Tests",meta.color,"✦"));
+  bdy.appendChild(makeMultiSelect("Parameters Checked","",MD_PARAMS,gf("params")||[],arr=>sf("params",arr)));
+  bdy.appendChild(makeDropdown("Test Ball Size","",["1.7mm","1.4mm","1.0mm","0.1mm"],gf("ball_size"),v=>sf("ball_size",v)));
+  bdy.appendChild(makeNumber("Sensitivity Setting","","",gf("sensitivity"),v=>sf("sensitivity",v)));
+  bdy.appendChild(makeToggle("Ferrous Test","",["Pass","Fail"],gf("ferrous"),v=>sf("ferrous",v),v=>v==="Fail"));
+  bdy.appendChild(makeToggle("Non-Ferrous Test","",["Pass","Fail"],gf("non_ferrous"),v=>sf("non_ferrous",v),v=>v==="Fail"));
+  bdy.appendChild(makeToggle("Stainless Steel Test","",["Pass","Fail"],gf("stainless"),v=>sf("stainless",v),v=>v==="Fail"));
+  bdy.appendChild(makeToggle("Auto-Reject Working","",["Yes","No"],gf("reject_ok"),v=>sf("reject_ok",v),v=>v==="No"));
+  bdy.appendChild(secHdr("Sign-off",C.teal,"◈"));
+  bdy.appendChild(makeText("Corrective Action","","If any test failed…",gf("corrective"),v=>sf("corrective",v)));
+  bdy.appendChild(makeText("Verified By","","Supervisor name",gf("verified_by"),v=>sf("verified_by",v),1));
+  bdy.appendChild(makeToggle("Overall Status","",["Calibrated","Needs Attention","Out of Service"],gf("status"),v=>sf("status",v),v=>v!=="Calibrated"));
+  bdy.appendChild(submitBtn("Submit Calibration",meta.color,async()=>{
+    const fails=[];
+    if(gf("ferrous")==="Fail") fails.push("Ferrous FAIL");
+    if(gf("non_ferrous")==="Fail") fails.push("Non-ferrous FAIL");
+    if(gf("stainless")==="Fail") fails.push("Stainless FAIL");
+    if(gf("reject_ok")==="No") fails.push("Auto-reject NOT working");
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Metal Detector Calibration",user:S.user.name,role:S.user.role,data:{...S.fData}};
+    await trySave("Metal Detector Calibration",()=>fbAddLog("Metal Detector Calibration",entry),()=>{
+      sendAlerts(fails,"Metal Detector Calibration",S.user.name);
+      afterSubmit("Metal Detector Calibration");
+    });
+  }));
+  appendCustomFields(bdy,"Metal Detector Calibration");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderGrooming(bdy,meta){
+  bdy.appendChild(secHdr("Session",meta.color,"👷"));
+  bdy.appendChild(makeDate(t("Date"),gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown(t("Department"),"",tOpts(["Production","Packaging","QC","Maintenance","Accounts","Other"]),gf("dept"),v=>sf("dept",v)));
+  bdy.appendChild(div({fontSize:"13px",color:C.muted,marginBottom:"16px",lineHeight:"1.5"},S.user.lang==="hi"?"जो स्टाफ नहीं माना उनके नाम चुनें। सब ठीक हो तो खाली छोड़ें।":"Select staff who did NOT comply. Leave blank if all OK."));
+  GROOMING_PARAMS.forEach(param=>{
+    const paramLabel=t(param)||param;
+    const cur=S.groomingData[param]||[];
+    bdy.appendChild(makeMultiSelect(paramLabel,S.user.lang==="hi"?"खाली छोड़ें अगर सब ठीक है":"Leave blank if all OK",GROOMING_STAFF,cur,arr=>{S.groomingData[param]=arr;}));
+  });
+  bdy.appendChild(makeRating(t("Overall Score"),"",gf("overall_score"),v=>sf("overall_score",v)));
+  bdy.appendChild(makeText(t("Additional Issues"),"","",gf("issues"),v=>sf("issues",v)));
+  bdy.appendChild(submitBtn("Submit Grooming",meta.color,async()=>{
+    const fails=[];const allD=new Set();
+    GROOMING_PARAMS.forEach(p=>{const d=S.groomingData[p]||[];if(d.length){fails.push(p+": "+d.join(", "));d.forEach(n=>allD.add(n));}});
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Grooming",user:S.user.name,role:S.user.role,data:{...S.fData,groomingChecks:{...S.groomingData},allDefaulters:[...allD]}};
+    await trySave("Grooming",()=>fbAddLog("Grooming",entry),()=>{
+      sendAlerts(fails.slice(0,5),"Grooming",S.user.name);
+      afterSubmit("Grooming");
+    });
+  }));
+  appendCustomFields(bdy,"Grooming");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderHousekeeping(bdy,meta){
+  bdy.appendChild(secHdr("Session",meta.color,"🧹"));
+  bdy.appendChild(makeDate(t("Date"),gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeToggle(t("Shift"),"",tOpts(["Morning","Evening","Night"]),gf("shift"),v=>sf("shift",v)));
+  bdy.appendChild(makeText(t("Checked By"),"","",gf("checked_by"),v=>sf("checked_by",v),1));
+  [{title:"Production",color:C.amber,icon:"◉",areas:["Production floor","Machines & conveyors","Drainage"]},
+   {title:"Storage",color:C.blue,icon:"▣",areas:["Storage area","Packaging area","Raw material area"]},
+   {title:"Toilets & Common",color:C.teal,icon:"✦",areas:["Toilets","Wash basins","Common areas"]},
+   {title:"Office",color:C.purple,icon:"◈",areas:["Office area","Entrance / lobby"]}].forEach(sec=>{
+    bdy.appendChild(secHdr(t(sec.title),sec.color,sec.icon));
+    sec.areas.forEach(area=>bdy.appendChild(makeRating(t(area),"1=गंदा · 5=साफ",gf(area),v=>sf(area,v))));
+  });
+  bdy.appendChild(secHdr("Issues",C.red,"⚠"));
+  bdy.appendChild(makeToggle("Pest Signs","",["None","Yes"],gf("pest_signs"),v=>sf("pest_signs",v),v=>v==="Yes"));
+  bdy.appendChild(makeToggle("Soap / Sanitiser","",["Available","Refill Needed","Empty"],gf("soap"),v=>sf("soap",v),v=>v==="Empty"));
+  bdy.appendChild(makeText("Issues / Actions","","Pending actions…",gf("hk_issues"),v=>sf("hk_issues",v)));
+  bdy.appendChild(submitBtn("Submit Housekeeping",meta.color,async()=>{
+    const fails=[];
+    if(gf("pest_signs")==="Yes") fails.push("Pest signs reported");
+    if(gf("soap")==="Empty") fails.push("Soap/sanitiser empty");
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Housekeeping",user:S.user.name,role:S.user.role,data:{...S.fData}};
+    await trySave("Housekeeping",()=>fbAddLog("Housekeeping",entry),()=>{
+      sendAlerts(fails,"Housekeeping",S.user.name);
+      afterSubmit("Housekeeping");
+    });
+  }));
+  appendCustomFields(bdy,"Housekeeping");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderMachineStatus(bdy,meta){
+  const mc=S.activeMC||MACHINES[0];
+  const idx=MACHINES.indexOf(mc);
+
+  // Tappable machine selector at top
+  const prog=div({display:"flex",gap:"5px",marginBottom:"20px",flexWrap:"wrap"});
+  MACHINES.forEach(m=>{
+    const done=S.mcParams[m]&&S.mcParams[m]._status;
+    const isA=m===mc;
+    prog.appendChild(btn({padding:"7px 10px",borderRadius:"20px",fontSize:"12px",fontWeight:"700",
+      background:isA?meta.color+"22":done?"rgba(45,212,160,0.15)":C.surface,
+      border:"2px solid "+(isA?meta.color:done?C.green:C.border),
+      color:isA?meta.color:done?C.green:C.muted},
+      m+(done?" ✓":""),()=>{saveDraft("Machine Status");ss({activeMC:m});}));
+  });
+  bdy.appendChild(prog);
+
+  // Current machine label
+  bdy.appendChild(div({background:meta.color+"12",border:"1px solid "+meta.color+"44",
+    borderRadius:"12px",padding:"12px 16px",marginBottom:"20px",
+    fontSize:"17px",fontWeight:"800",color:meta.color},mc));
+
+  if(!S.mcParams[mc]) S.mcParams[mc]={};
+  const mcp=S.mcParams[mc];
+
+  bdy.appendChild(makeDropdown(t("Machine Status"),"",tOpts(["Run","Not-Run"]),mcp._status,v=>{mcp._status=v;}));
+  bdy.appendChild(secHdr(t("Parameters"),meta.color,"⚙"));
+
+  MACHINE_PARAMS.forEach(param=>{
+    if(!mcp[param]) mcp[param]={};
+    const pd=mcp[param];
+    const pw=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"12px 14px",marginBottom:"10px"});
+    pw.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text,marginBottom:"8px"},t(param)));
+    const sr=div({display:"flex",gap:"7px",marginBottom:"8px"});
+    const sbtns=[];
+    tOpts(["OK","Not OK"]).forEach((opt,oi)=>{
+      const rawOpt=["OK","Not OK"][oi];
+      const sel=pd.status===rawOpt,col=rawOpt==="Not OK"?C.red:C.green;
+      const b=btn({flex:"1",padding:"9px",border:"2px solid "+(sel?col:C.border),
+        borderRadius:"8px",background:sel?col+"22":C.surface,color:sel?col:C.muted,
+        fontWeight:"700",fontSize:"14px"},opt,()=>{
+        pd.status=rawOpt;
+        sbtns.forEach(({b:bb,o})=>{const s=o===rawOpt,c=o==="Not OK"?C.red:C.green;bb.style.border="2px solid "+(s?c:C.border);bb.style.background=s?c+"22":C.surface;bb.style.color=s?c:C.muted;});
+        cb.style.display=rawOpt==="Not OK"?"block":"none";
+      });
+      sbtns.push({b,o:rawOpt});sr.appendChild(b);
+    });
+    pw.appendChild(sr);
+    const cb=el("textarea",{width:"100%",background:"rgba(255,255,255,0.06)",border:"1.5px solid "+C.border,borderRadius:"8px",color:C.text,fontSize:"13px",padding:"8px 10px",outline:"none",resize:"none",display:pd.status==="Not OK"?"block":"none"},null,{placeholder:"Describe issue…",rows:"2"});
+    cb.value=pd.comment??"";cb.addEventListener("input",e=>{pd.comment=e.target.value;});
+    pw.appendChild(cb);bdy.appendChild(pw);
+  });
+
+  appendCustomFields(bdy,"Machine Status");
+
+  // Always show Submit — staff can submit at any point
+  bdy.appendChild(submitBtn(t("Submit Machine Status"),meta.color,async()=>{
+    const fails=[];
+    Object.entries(S.mcParams).forEach(([m,params])=>{
+      if(params._status==="Not-Run") fails.push(m+" Not Running");
+      Object.entries(params).forEach(([p,pd])=>{if(p!=="_status"&&typeof pd==="object"&&pd.status==="Not OK") fails.push(m+" — "+p+" Not OK");});
+    });
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Machine Status",
+      user:S.user.name,role:S.user.role,machineData:JSON.parse(JSON.stringify(S.mcParams))};
+    await trySave("Machine Status",()=>fbAddLog("Machine Status",entry),()=>{
+      sendAlerts(fails.slice(0,8),"Machine Status",S.user.name);
+      afterSubmit("Machine Status");
+    });
+  }));
+
+  // Next machine button (only if not last)
+  if(idx<MACHINES.length-1){
+    const nextMC=MACHINES[idx+1];
+    bdy.appendChild(btn({width:"100%",border:"2px solid "+meta.color,borderRadius:"12px",
+      background:"transparent",color:meta.color,fontWeight:"800",fontSize:"16px",
+      padding:"14px",marginTop:"8px"},
+      (S.user.lang==="hi"?"अगली मशीन: ":"Next Machine: ")+nextMC+" →",
+      ()=>{saveDraft("Machine Status");ss({activeMC:nextMC});}));
+  }
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderBreakdown(bdy,meta){
+  bdy.appendChild(secHdr("Breakdown Details",meta.color,"🔴"));
+  bdy.appendChild(makeDate("Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown(t("Machine No."),"",MACHINES,gf("machine"),v=>sf("machine",v)));
+  bdy.appendChild(div({fontSize:"15px",fontWeight:"700",color:C.text,marginBottom:"6px"},t("Breakdown Issues")));
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},S.user.lang==="hi"?"सभी लागू विकल्प चुनें":"Select all that apply"));
+  const iw=div({});
+  function ri(){
+    iw.innerHTML="";
+    BREAKDOWN_ISSUES.forEach(issue=>{
+      const sel=S.breakdownIssues.includes(issue);
+      const row=div({background:sel?meta.color+"12":C.surface,border:"1.5px solid "+(sel?meta.color:C.border),borderRadius:"10px",padding:"10px 12px",marginBottom:"8px",cursor:"pointer"});
+      const top=div({display:"flex",alignItems:"center",gap:"10px"});
+      top.appendChild(div({width:"20px",height:"20px",border:"2px solid "+(sel?meta.color:C.border),borderRadius:"5px",background:sel?meta.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0",color:"#000",fontSize:"11px"},sel?"✓":""));
+      top.appendChild(span({fontSize:"14px",fontWeight:"700",color:sel?meta.color:C.text},issue));
+      row.appendChild(top);
+      row.addEventListener("click",()=>{
+        if(sel) S.breakdownIssues=S.breakdownIssues.filter(i=>i!==issue);
+        else{S.breakdownIssues.push(issue);if(!S.breakdownDetails[issue])S.breakdownDetails[issue]="";}
+        ri();
+      });
+      if(sel){
+        const det=el("textarea",{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid "+C.border,borderRadius:"8px",color:C.text,fontSize:"13px",padding:"8px 10px",outline:"none",resize:"none",marginTop:"8px",display:"block"},null,{placeholder:"Details for "+issue+"…",rows:"2"});
+        det.value=S.breakdownDetails[issue]??"";
+        det.addEventListener("click",e=>e.stopPropagation());
+        det.addEventListener("input",e=>{S.breakdownDetails[issue]=e.target.value;});
+        row.appendChild(det);
+      }
+      iw.appendChild(row);
+    });
+  }
+  ri();bdy.appendChild(iw);
+  bdy.appendChild(secHdr(t("Timing & Resolution"),C.orange,"🔧"));
+  bdy.appendChild(makeTime(t("Machine Off Time"),"",gf("off_time"),v=>sf("off_time",v)));
+  bdy.appendChild(makeTime(t("Machine On Time"),"",gf("on_time"),v=>sf("on_time",v)));
+  bdy.appendChild(makeText(t("Work Done"),"","",gf("work_done"),v=>sf("work_done",v)));
+  bdy.appendChild(makeText(t("Spares Used"),"","",gf("spares"),v=>sf("spares",v)));
+  bdy.appendChild(makeDropdown(t("Status"),"",tOpts(["Fixed","Partially Fixed","Pending","Ongoing"]),gf("bd_status"),v=>sf("bd_status",v)));
+  bdy.appendChild(makeText(t("Reported To"),"","",gf("reported_to"),v=>sf("reported_to",v),1));
+  bdy.appendChild(submitBtn("Submit Breakdown",meta.color,async()=>{
+    if(!S.breakdownIssues.length){toast("Select at least one issue");return;}
+    const fails=[];
+    if(gf("bd_status")==="Pending"||gf("bd_status")==="Ongoing") fails.push("Breakdown unresolved on "+gf("machine"));
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Breakdown Report",user:S.user.name,role:S.user.role,data:{...S.fData,issues:[...S.breakdownIssues],issueDetails:{...S.breakdownDetails}}};
+    await trySave("Breakdown Report",()=>fbAddLog("Breakdown Report",entry),()=>{
+      sendAlerts(fails,"Breakdown Report",S.user.name);
+      afterSubmit("Breakdown Report");
+    });
+  }));
+  appendCustomFields(bdy,"Breakdown Report");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderMaintenance(bdy,meta){
+  bdy.appendChild(secHdr("Daily Maintenance",meta.color,"🔧"));
+  bdy.appendChild(makeDate("Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeText(t("Done By"),"","",gf("done_by"),v=>sf("done_by",v),1));
+  bdy.appendChild(makeDropdown(t("Machine No."),"",MACHINES,gf("machine"),v=>sf("machine",v)));
+  bdy.appendChild(secHdr(t("Work Done"),meta.color,"⚙"));
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},S.user.lang==="hi"?"आज किया गया सारा काम चुनें":"Select all work performed today"));
+  const ww=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"16px"});
+  MAINTENANCE_WORKS.forEach(work=>{
+    const sel=S.maintenanceWorks.includes(work);
+    const b=btn({padding:"8px 12px",background:sel?meta.color+"22":C.surface,
+      border:"1.5px solid "+(sel?meta.color:C.border),borderRadius:"8px",
+      color:sel?meta.color:C.muted,fontWeight:"700",fontSize:"13px"},work,()=>{
+      if(sel) S.maintenanceWorks=S.maintenanceWorks.filter(w=>w!==work);
+      else S.maintenanceWorks.push(work);
+      b.style.background=!sel?meta.color+"22":C.surface;
+      b.style.borderColor=!sel?meta.color:C.border;
+      b.style.color=!sel?meta.color:C.muted;
+    });
+    ww.appendChild(b);
+  });
+  bdy.appendChild(ww);
+  bdy.appendChild(makeText(t("Spares Used"),"","",gf("spares"),v=>sf("spares",v)));
+  bdy.appendChild(makeText(t("Pending Work"),"","",gf("pending"),v=>sf("pending",v)));
+  bdy.appendChild(makeDropdown(t("Status"),"",tOpts(["Run","Not-Run"]),gf("status"),v=>sf("status",v)));
+  bdy.appendChild(makeText(t("Remarks"),"","",gf("remarks"),v=>sf("remarks",v)));
+  bdy.appendChild(submitBtn("Submit Maintenance",meta.color,async()=>{
+    const fails=[];
+    if(gf("status")==="Not-Run") fails.push("Machine "+gf("machine")+" Not Running after maintenance");
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Maintenance Report",user:S.user.name,role:S.user.role,data:{...S.fData,worksCompleted:[...S.maintenanceWorks]}};
+    await trySave("Maintenance Report",()=>fbAddLog("Maintenance Report",entry),()=>{
+      sendAlerts(fails,"Maintenance Report",S.user.name);
+      afterSubmit("Maintenance Report");
+    });
+  }));
+  appendCustomFields(bdy,"Maintenance Report");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderDelivery(bdy,meta){
+  bdy.appendChild(secHdr("Dispatch Info",meta.color,"🚚"));
+  bdy.appendChild(makeDate("Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown(t("Route No."),"",ROUTES,gf("route"),v=>sf("route",v),true));
+  bdy.appendChild(makeText(t("Clients on Route"),"","Client names, comma-separated",gf("clients"),v=>sf("clients",v),2));
+  bdy.appendChild(makeText(t("Driver Name"),"","Driver name",gf("driver"),v=>sf("driver",v),1));
+  bdy.appendChild(makeText(t("Vehicle Number"),"","e.g. DL 01 AB 1234",gf("vehicle"),v=>sf("vehicle",v),1));
+  bdy.appendChild(makeTime(t("Out Time"),"Time vehicle left factory",gf("out_time"),v=>sf("out_time",v)));
+  bdy.appendChild(secHdr(t("Vehicle & Load"),C.blue,"▣"));
+  bdy.appendChild(makeRating(t("Vehicle Cleanliness"),"1=dirty · 5=clean",gf("veh_clean"),v=>sf("veh_clean",v)));
+  bdy.appendChild(makeToggle(t("Packaging Intact"),"",["Yes","No"],gf("pkg_intact"),v=>sf("pkg_intact",v),v=>v==="No"));
+  bdy.appendChild(makeToggle(t("Quantity Match"),"",["Yes","No","Partial"],gf("qty_match"),v=>sf("qty_match",v),v=>v!=="Yes"));
+  bdy.appendChild(makeNumber(t("Temp at Dispatch"),"","°C",gf("temp_dispatch"),v=>sf("temp_dispatch",v)));
+  bdy.appendChild(secHdr(t("Driver Hygiene"),C.teal,"👷"));
+  bdy.appendChild(makeToggle(t("Driver Uniform"),"",["Yes","No"],gf("driver_uniform"),v=>sf("driver_uniform",v),v=>v==="No"));
+  bdy.appendChild(makeToggle(t("Driver PPE / Mask"),"",["Yes","No","NA"],gf("driver_ppe"),v=>sf("driver_ppe",v)));
+  bdy.appendChild(secHdr(t("Delivery Outcome"),C.green,"✓"));
+  bdy.appendChild(makeDropdown(t("Delivery Status"),"",["Delivered","Partial","Failed","Pending"],gf("del_status"),v=>sf("del_status",v)));
+  bdy.appendChild(makeToggle(t("Client Signature"),"",["Received","Not Received","Digital"],gf("client_sign"),v=>sf("client_sign",v),v=>v==="Not Received"));
+  bdy.appendChild(makeTime(t("Return Time"),"",gf("return_time"),v=>sf("return_time",v)));
+  bdy.appendChild(makeText("Comments","","Issues, route changes…",gf("del_comments"),v=>sf("del_comments",v)));
+  bdy.appendChild(submitBtn("Submit Delivery",meta.color,async()=>{
+    const fails=[];
+    if(gf("pkg_intact")==="No") fails.push("Packaging damaged");
+    if(gf("qty_match")!=="Yes") fails.push("Quantity mismatch");
+    if(gf("driver_uniform")==="No") fails.push("Driver no uniform");
+    if(gf("client_sign")==="Not Received") fails.push("No client signature");
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Delivery Checklist",user:S.user.name,role:S.user.role,data:{...S.fData}};
+    await trySave("Delivery Checklist",()=>fbAddLog("Delivery Checklist",entry),()=>{
+      sendAlerts(fails,"Delivery Checklist",S.user.name);
+      afterSubmit("Delivery Checklist");
+    });
+  }));
+  appendCustomFields(bdy,"Delivery Checklist");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderVisitorLog(bdy,meta){
+  const shift=S.user.shift||"Shift";
+  bdy.appendChild(div({fontSize:"13px",fontWeight:"800",color:meta.color,marginBottom:"16px",textAlign:"center"},shift+" — "+new Date().toLocaleDateString("en-IN")));
+  if(S.visitorEntries.length){
+    bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},S.visitorEntries.length+" Visitor(s) Logged"));
+    S.visitorEntries.forEach((e,i)=>{
+      const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"12px",marginBottom:"8px"});
+      c.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},(i+1)+". "+(e.visitor_name||"Unknown")));
+      c.appendChild(div({fontSize:"12px",color:C.muted},(e.purpose||"")+" · In: "+(e.time_in||"—")));
+      bdy.appendChild(c);
+    });
+    bdy.appendChild(div({height:"1px",background:C.border,margin:"16px 0"}));
+  }
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"New Visitor Entry"));
+  bdy.appendChild(makeText(t("Visitor Name"),"","Full name",gf("visitor_name"),v=>sf("visitor_name",v),1));
+  bdy.appendChild(makeText(t("Company / From"),"","Organisation",gf("company"),v=>sf("company",v),1));
+  bdy.appendChild(makeDropdown(t("Purpose"),"",["Meeting","Delivery","Inspection","Repair","Vendor","Personal","Other"],gf("purpose"),v=>sf("purpose",v),true));
+  bdy.appendChild(makeText(t("Host / Meeting With"),"","RF staff name",gf("host"),v=>sf("host",v),1));
+  bdy.appendChild(makeTime(t("Time In"),"",gf("time_in"),v=>sf("time_in",v)));
+  bdy.appendChild(makeTime(t("Time Out"),"Fill when leaving",gf("time_out"),v=>sf("time_out",v)));
+  bdy.appendChild(makeDropdown(t("ID Shown"),"",["Aadhaar","Driving Licence","Passport","Company ID","None"],gf("id_type"),v=>sf("id_type",v)));
+  bdy.appendChild(makeToggle(t("PPE / Badge Issued"),"",["Yes","No","NA"],gf("ppe_issued"),v=>sf("ppe_issued",v)));
+  bdy.appendChild(makeToggle(t("Hygiene Briefing Given"),"",["Yes","No"],gf("hygiene_brief"),v=>sf("hygiene_brief",v),v=>v==="No"));
+  bdy.appendChild(makeText("Remarks","","Notes…",gf("visitor_remarks"),v=>sf("visitor_remarks",v)));
+  bdy.appendChild(btn({width:"100%",background:meta.color+"18",border:"2px solid "+meta.color+"66",
+    borderRadius:"12px",color:meta.color,fontWeight:"800",fontSize:"16px",padding:"14px",
+    marginBottom:"10px"},"+ Add Another Visitor",()=>{
+    S.visitorEntries.push({...S.fData});ss({fData:{}});
+  }));
+  bdy.appendChild(submitBtn("Submit Visitor Log",meta.color,async()=>{
+    const last={...S.fData};
+    const all=[...S.visitorEntries];
+    if(last.visitor_name) all.push(last);
+    if(!all.length){toast("Add at least one visitor");return;}
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Visitor Log",user:S.user.name,role:S.user.role,shift:S.user.shift,entries:all};
+    await trySave("Visitor Log",()=>fbAddLog("Visitor Log",entry),()=>afterSubmit("Visitor Log"));
+  }));
+  appendCustomFields(bdy,"Visitor Log");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+function renderEquipService(bdy,meta){
+  bdy.appendChild(secHdr("Equipment Details",meta.color,"📅"));
+  bdy.appendChild(makeDate("Service Date",gf("date"),v=>sf("date",v)));
+  bdy.appendChild(makeDropdown("Equipment","",EQUIPMENT_LIST,gf("equipment"),v=>sf("equipment",v),true));
+  bdy.appendChild(makeText("Equipment ID / Tag","","Asset tag",gf("eq_id"),v=>sf("eq_id",v),1));
+  bdy.appendChild(makeText("Serviced By","","Technician or vendor name",gf("serviced_by"),v=>sf("serviced_by",v),1));
+  bdy.appendChild(makeDropdown("Service Type","",["Routine","Breakdown","Annual AMC","Calibration","Other"],gf("svc_type"),v=>sf("svc_type",v)));
+  bdy.appendChild(secHdr("Service Details",C.blue,"🔧"));
+  bdy.appendChild(makeText("Service Details","","Work performed…",gf("work_done"),v=>sf("work_done",v),3));
+  bdy.appendChild(makeText("Parts Replaced","","List parts…",gf("parts"),v=>sf("parts",v)));
+  bdy.appendChild(makeNumber("Approx Cost","","₹",gf("cost"),v=>sf("cost",v)));
+  bdy.appendChild(makeDate("Next Service Due",gf("next_service"),v=>sf("next_service",v)));
+  bdy.appendChild(makeDropdown("Equipment Status","",["Operational","Needs Follow-up","Out of Service"],gf("eq_status"),v=>sf("eq_status",v)));
+  bdy.appendChild(makeText("Remarks","","Other notes…",gf("eq_remarks"),v=>sf("eq_remarks",v)));
+  bdy.appendChild(submitBtn("Submit Service Record",meta.color,async()=>{
+    const fails=[];
+    if(gf("eq_status")==="Out of Service") fails.push((gf("equipment")||"Equipment")+" Out of Service");
+    const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Equipment Service Record",user:S.user.name,role:S.user.role,data:{...S.fData}};
+    await trySave("Equipment Service Record",()=>fbAddLog("Equipment Service Record",entry),()=>{
+      sendAlerts(fails,"Equipment Service Record",S.user.name);
+      afterSubmit("Equipment Service Record");
+    });
+  }));
+  appendCustomFields(bdy,"Equipment Service Record");
+  bdy.appendChild(div({height:"40px"}));
+}
+
+// ── POST-SUBMIT MODAL ─────────────────────────────────────────────────────────
+function showPostSubmitModal(fn){
+  const meta=getFormsMeta()[fn]||{icon:"◉",color:C.green};
+  const modal=document.getElementById("modal");
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"48px"},"✅"));
+  const ttl=div({fontSize:"18px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"4px"});
+  ttl.textContent=fn+" Submitted";box.appendChild(ttl);
+  box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",marginBottom:"20px"},
+    new Date().toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})));
+  box.appendChild(div({height:"1px",background:C.border,marginBottom:"16px"}));
+  box.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
+    color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "⬇ Download Today's Report",()=>{
+      modal.classList.remove("open");
+      downloadMasterExcel(fn,"today");
+      ss({screen:"home"});
+    }));
+  box.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"44",
+    borderRadius:"12px",color:C.amber,fontWeight:"700",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "📊 Go to Reports",()=>{modal.classList.remove("open");ss({screen:"reports",reportForm:fn,reportRange:"today"});}));
+  box.appendChild(btn({width:"100%",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"12px",color:C.muted,fontWeight:"700",fontSize:"15px",padding:"13px"},
+    "← Back to Home",()=>{modal.classList.remove("open");ss({screen:"home"});}));
+  modal.classList.add("open");
+  modal.onclick=e=>{if(e.target===modal){modal.classList.remove("open");ss({screen:"home"});}};
+}
+
+// ── HISTORY ───────────────────────────────────────────────────────────────────
+function renderHistory(){
+  const forms=getUserForms(S.user);
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr("History",S.user.name,null,()=>ss({screen:"home",historyForm:null}),"← Back"));
+  const bdy=wrap();
+  if(!S.historyForm){
+    bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"Select Form"));
+    forms.forEach(fn=>{
+      const logs=getFormLogs(fn);
+      const meta=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
+      const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",
+        padding:"14px 16px",marginBottom:"8px",cursor:"pointer",display:"flex",alignItems:"center",gap:"12px"},
+        null,{onClick:()=>ss({historyForm:fn})});
+      c.appendChild(span({fontSize:"20px"},meta.icon||"◉"));
+      const info=div({flex:"1"});
+      info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},fn));
+      info.appendChild(div({fontSize:"12px",color:C.muted},logs.length+" submission(s)"));
+      c.appendChild(info);c.appendChild(span({fontSize:"16px",color:C.muted},"→"));
+      bdy.appendChild(c);
+    });
+  } else {
+    const fn=S.historyForm;
+    const logs=getFormLogs(fn);
+    const meta=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
+    bdy.appendChild(btn({background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",
+      color:C.text,padding:"8px 14px",fontSize:"13px",fontWeight:"700",marginBottom:"16px"},
+      "← All Forms",()=>ss({historyForm:null})));
+    bdy.appendChild(div({fontSize:"14px",fontWeight:"800",color:meta.color||C.amber,marginBottom:"12px"},
+      (meta.icon||"◉")+" "+fn+" History"));
+    if(!logs.length){
+      bdy.appendChild(div({textAlign:"center",color:C.muted,padding:"40px 0"},"No submissions yet"));
+    } else {
+      logs.forEach(log=>{
+        const d=new Date(log.timestamp);
+        const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",
+          padding:"12px 14px",marginBottom:"8px",cursor:"pointer"},null,
+          {onClick:()=>ss({screen:"viewer",viewingLog:log})});
+        const top=div({display:"flex",justifyContent:"space-between",alignItems:"flex-start"});
+        const left=div({flex:"1"});
+        left.appendChild(div({fontSize:"13px",fontWeight:"800",color:C.text},log.user+" · "+log.role));
+        if(log.mode||log.shift) left.appendChild(span({fontSize:"10px",fontWeight:"700",
+          color:meta.color||C.amber,background:(meta.color||C.amber)+"22",
+          padding:"2px 6px",borderRadius:"10px",display:"inline-block",marginTop:"3px"},log.mode||log.shift));
+        left.appendChild(div({fontSize:"11px",color:C.muted,marginTop:"3px"},
+          d.toLocaleDateString("en-IN")+" · "+d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})));
+        top.appendChild(left);
+        const rb=div({display:"flex",gap:"6px",flexShrink:"0",alignItems:"center"});
+        rb.appendChild(span({fontSize:"12px",color:C.muted},"View →"));
+        rb.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
+          borderRadius:"6px",padding:"4px 8px",fontSize:"12px"},"✕",
+          e=>{e.stopPropagation();if(confirm("Delete?"))fbDelLog(fn,log._key);}));
+        top.appendChild(rb);card.appendChild(top);bdy.appendChild(card);
+      });
+      bdy.appendChild(div({height:"12px"}));
+      bdy.appendChild(btn({width:"100%",background:C.blue,border:"none",borderRadius:"10px",
+        color:"#fff",fontWeight:"800",fontSize:"15px",padding:"13px"},
+        "Export CSV",()=>exportCSV(fn,logs)));
+    }
+  }
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+function renderViewer(){
+  const log=S.viewingLog;
+  if(!log) return renderHistory();
+  const meta=getFormsMeta()[log.formName]||{icon:"◉",color:C.amber};
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr(log.formName,
+    new Date(log.timestamp).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}),
+    null,()=>ss({screen:"history"}),"← Back"));
+  w.appendChild(div({height:"3px",background:meta.color||C.amber}));
+  const bdy=wrap();
+  const mc=div({background:(meta.color||C.amber)+"10",border:"1px solid "+(meta.color||C.amber)+"44",
+    borderRadius:"12px",padding:"12px 16px",marginBottom:"16px"});
+  mc.appendChild(div({fontSize:"14px",fontWeight:"800",color:meta.color||C.amber},(meta.icon||"◉")+" "+log.formName));
+  mc.appendChild(div({fontSize:"13px",color:C.muted,marginTop:"4px"},"By: "+log.user+" ("+log.role+")"+(log.shift?" · "+log.shift:"")));
+  bdy.appendChild(mc);
+  function dr(k,v){
+    if(v===null||v===undefined||v==="") return;
+    const row=div({display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid "+C.border});
+    row.appendChild(span({fontSize:"12px",color:C.muted,flex:"1"},String(k).replace(/_/g," ")));
+    const ve=div({fontSize:"13px",fontWeight:"600",color:C.text,textAlign:"right",flex:"2"});
+    ve.textContent=Array.isArray(v)?v.join(", "):String(v);
+    row.appendChild(ve);bdy.appendChild(row);
+  }
+  function flatten(obj,pfx){
+    if(!obj||typeof obj!=="object") return;
+    Object.entries(obj).forEach(([k,v])=>{
+      if(["_key","id","timestamp","formName","user","role","mode","shift","_local"].includes(k)) return;
+      const key=(pfx?pfx+" → ":"")+k;
+      if(Array.isArray(v)) dr(key,v.join(", "));
+      else if(typeof v==="object") flatten(v,key);
+      else dr(key,v);
+    });
+  }
+  if(log.entries) log.entries.forEach((e,i)=>{bdy.appendChild(div({fontSize:"14px",fontWeight:"800",color:meta.color||C.amber,marginTop:"14px",marginBottom:"6px"},"Visitor "+(i+1)));flatten(e,"");});
+  else if(log.machineData) flatten(log.machineData,"");
+  else if(log.data) flatten(log.data,"");
+  if(log.issues) dr("Issues",log.issues.join(", "));
+  if(log.worksCompleted) dr("Works Completed",log.worksCompleted.join(", "));
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+// ── REPORTS ───────────────────────────────────────────────────────────────────
+function renderReports(){
+  const w=div({minHeight:"100vh",background:C.bg});
+  const dlBtn=btn({background:C.green,border:"none",borderRadius:"8px",color:"#000",
+    padding:"7px 12px",fontSize:"13px",fontWeight:"800"},
+    "⬇ Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange));
+  w.appendChild(makeHdr("📊 Reports",S.user.name,[dlBtn],()=>ss({screen:"home"}),"← Back"));
+  const bdy=wrap();
+  // Range
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Date Range"));
+  const rr=div({display:"flex",gap:"7px",marginBottom:"20px",flexWrap:"wrap"});
+  [{v:"today",l:"Today"},{v:"week",l:"This Week"},{v:"month",l:"This Month"},{v:"all",l:"All Time"}].forEach(r=>{
+    const sel=S.reportRange===r.v;
+    rr.appendChild(btn({padding:"9px 16px",border:"2px solid "+(sel?C.green:C.border),
+      borderRadius:"10px",background:sel?C.green+"22":C.surface,
+      color:sel?C.green:C.muted,fontWeight:"700",fontSize:"14px"},
+      r.l,()=>ss({reportRange:r.v})));
+  });
+  bdy.appendChild(rr);
+  // Form filter
+  const allForms=Object.keys(getFormsMeta());
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Filter by Form"));
+  const fr=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"20px"});
+  const ab=btn({padding:"8px 14px",border:"2px solid "+(S.reportForm===null?C.green:C.border),
+    borderRadius:"20px",background:S.reportForm===null?C.green+"22":C.surface,
+    color:S.reportForm===null?C.green:C.muted,fontWeight:"700",fontSize:"13px"},
+    "All Forms",()=>ss({reportForm:null}));
+  fr.appendChild(ab);
+  allForms.forEach(fn=>{
+    const sel=S.reportForm===fn;
+    const m=getFormsMeta()[fn]||{};
+    fr.appendChild(btn({padding:"8px 14px",border:"2px solid "+(sel?C.green:C.border),
+      borderRadius:"20px",background:sel?C.green+"22":C.surface,
+      color:sel?C.green:C.muted,fontWeight:"700",fontSize:"13px"},
+      (m.icon||"")+" "+fn,()=>ss({reportForm:fn})));
+  });
+  bdy.appendChild(fr);
+  // Stats
+  const filtered=getFilteredLogs(S.reportForm,S.reportRange);
+  const byForm={};filtered.forEach(l=>{byForm[l.formName]=(byForm[l.formName]||0)+1;});
+  const byStaff={};filtered.forEach(l=>{byStaff[l.user]=(byStaff[l.user]||0)+1;});
+  const stats=div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"20px"});
+  [{l:"Total",v:filtered.length,c:C.green},{l:"Forms",v:Object.keys(byForm).length,c:C.amber},{l:"Staff",v:Object.keys(byStaff).length,c:C.blue}].forEach(s=>{
+    const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"12px"});
+    c.appendChild(div({fontSize:"26px",fontWeight:"800",color:s.c,fontFamily:"'DM Mono',monospace",lineHeight:"1"},String(s.v)));
+    c.appendChild(div({fontSize:"11px",color:C.muted,marginTop:"4px"},s.l));
+    stats.appendChild(c);
+  });
+  bdy.appendChild(stats);
+  if(!filtered.length){
+    bdy.appendChild(div({textAlign:"center",color:C.muted,padding:"40px 0",fontSize:"14px"},"No submissions in selected range"));
+  } else {
+    const show=S.reportForm?[S.reportForm]:Object.keys(byForm);
+    show.forEach(fn=>{
+      const m=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
+      const logs=filtered.filter(l=>l.formName===fn);
+      if(!logs.length) return;
+      const sec=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginBottom:"12px"});
+      const sh=div({display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"});
+      sh.appendChild(span({fontSize:"18px"},m.icon||"◉"));
+      const st=div({flex:"1"});
+      st.appendChild(div({fontSize:"14px",fontWeight:"800",color:m.color||C.amber},fn));
+      st.appendChild(div({fontSize:"12px",color:C.muted},logs.length+" submission(s)"));
+      sh.appendChild(st);
+      sh.appendChild(btn({background:(m.color||C.amber)+"22",border:"1px solid "+(m.color||C.amber)+"55",
+        borderRadius:"8px",color:m.color||C.amber,padding:"6px 10px",fontSize:"12px",fontWeight:"700"},
+        "⬇ CSV",()=>exportCSV(fn,logs)));
+      sec.appendChild(sh);
+      logs.slice(0,3).forEach(log=>{
+        const d=new Date(log.timestamp);
+        const row=div({display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:"1px solid "+C.border});
+        const l=div({});
+        l.appendChild(div({fontSize:"12px",fontWeight:"700",color:C.text},log.user));
+        l.appendChild(div({fontSize:"11px",color:C.muted},d.toLocaleDateString("en-IN")+" · "+d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})));
+        row.appendChild(l);
+        if(log.mode||log.shift) row.appendChild(span({fontSize:"10px",fontWeight:"700",color:m.color||C.amber,background:(m.color||C.amber)+"22",padding:"2px 6px",borderRadius:"10px"},log.mode||log.shift));
+        sec.appendChild(row);
+      });
+      if(logs.length>3) sec.appendChild(div({fontSize:"12px",color:C.muted,textAlign:"center",padding:"6px 0",borderTop:"1px solid "+C.border},"+"+(logs.length-3)+" more"));
+      bdy.appendChild(sec);
+    });
+  }
+  bdy.appendChild(div({height:"16px"}));
+  bdy.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
+    color:"#000",fontWeight:"800",fontSize:"17px",padding:"15px"},
+    "⬇ Download Master Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange)));
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+function getFilteredLogs(formFilter,range){
+  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const now=new Date();
+  const logs=[];
+  forms.forEach(fn=>{
+    getFormLogs(fn).forEach(log=>{
+      const d=new Date(log.timestamp);
+      let ok=true;
+      if(range==="today") ok=d.toDateString()===now.toDateString();
+      else if(range==="week"){const w=new Date(now);w.setDate(now.getDate()-7);ok=d>=w;}
+      else if(range==="month"){const m=new Date(now);m.setMonth(now.getMonth()-1);ok=d>=m;}
+      if(ok) logs.push(log);
+    });
+  });
+  return logs.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+}
+
+function flattenLog(log){
+  const flat={
+    Date:new Date(log.timestamp).toLocaleDateString("en-IN"),
+    Time:new Date(log.timestamp).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}),
+    Staff:log.user||"",Role:log.role||"",Mode:log.mode||"",Shift:log.shift||"",
+  };
+  function ext(obj,pfx){
+    if(!obj||typeof obj!=="object") return;
+    Object.entries(obj).forEach(([k,v])=>{
+      if(["_key","id","timestamp","formName","user","role","mode","shift","_local"].includes(k)) return;
+      const key=(pfx?pfx+" ":"")+k.replace(/_/g," ");
+      if(Array.isArray(v)) flat[key]=v.join(", ");
+      else if(typeof v==="object") ext(v,key);
+      else if(v!==null&&v!==undefined) flat[key]=String(v);
+    });
+  }
+  if(log.data) ext(log.data,"");
+  if(log.machineData) ext(log.machineData,"");
+  if(log.entries) log.entries.forEach((e,i)=>ext(e,"Visitor "+(i+1)));
+  if(log.issues) flat["Issues"]=log.issues.join(", ");
+  if(log.worksCompleted) flat["Works Completed"]=log.worksCompleted.join(", ");
+  return flat;
+}
+
+function downloadMasterExcel(formFilter,range){
+  if(typeof XLSX==="undefined"){toast("Excel library loading, please wait…");return;}
+  const wb=XLSX.utils.book_new();
+  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const now=new Date();
+  let sheets=0;
+  forms.forEach(fn=>{
+    const logs=getFilteredLogs(fn,range).filter(l=>l.formName===fn);
+    if(!logs.length) return;
+    const rows=logs.map(l=>flattenLog(l));
+    const keys=[];const ks=new Set();
+    rows.forEach(r=>Object.keys(r).forEach(k=>{if(!ks.has(k)){ks.add(k);keys.push(k);}}));
+    const ws=XLSX.utils.aoa_to_sheet([keys,...rows.map(r=>keys.map(k=>r[k]||""))]);
+    ws["!cols"]=keys.map(k=>({wch:Math.max(k.length,14)}));
+    XLSX.utils.book_append_sheet(wb,ws,fn.slice(0,31));
+    sheets++;
+  });
+  if(!sheets){toast("No data in selected range");return;}
+  // Summary
+  const sum=[["Form","Submissions","Range","Downloaded"]];
+  forms.forEach(fn=>{const n=getFilteredLogs(fn,range).filter(l=>l.formName===fn).length;if(n)sum.push([fn,n,range,now.toLocaleString("en-IN")]);});
+  const sw=XLSX.utils.aoa_to_sheet(sum);sw["!cols"]=[{wch:30},{wch:15},{wch:12},{wch:22}];
+  XLSX.utils.book_append_sheet(wb,sw,"Summary");
+  XLSX.writeFile(wb,"RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_"+now.toISOString().slice(0,10)+".xlsx");
+  toast("✓ Excel downloaded — "+sheets+" sheet(s)");
+}
+
+function exportCSV(fn,logs){
+  const rows=logs.map(l=>flattenLog(l));
+  if(!rows.length) return;
+  const keys=[];const ks=new Set();rows.forEach(r=>Object.keys(r).forEach(k=>{if(!ks.has(k)){ks.add(k);keys.push(k);}}));
+  const csv=[keys,...rows.map(r=>keys.map(k=>'"'+String(r[k]||"").replace(/"/g,"'")+'"'))].map(r=>r.join(",")).join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=fn.replace(/ /g,"_")+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+}
+
+function sendDailyReport(){
+  const today=new Date();
+  const ds=today.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  let msg="📋 *RF Factory — Daily Report*\n"+ds+"\n━━━━━━━━━━━━━━━━━━━━━━\n\n";
+  let total=0;
+  Object.keys(getFormsMeta()).forEach(fn=>{
+    const logs=getFormLogs(fn).filter(l=>new Date(l.timestamp).toDateString()===today.toDateString());
+    if(!logs.length) return;total+=logs.length;
+    msg+=(getFormsMeta()[fn]?.icon||"◉")+" *"+fn+"*: "+logs.length+" submission(s)\n";
+    msg+="  By: "+[...new Set(logs.map(l=>l.user))].join(", ")+"\n";
+  });
+  if(!total) msg+="No submissions today.\n";
+  msg+="\n━━━━━━━━━━━━━━━━━━━━━━\n_RF Factory Forms App_";
+  const recv=getStaff().filter(s=>s.reports||s.isAdmin);
+  recv.forEach((r,i)=>setTimeout(()=>sendWA(r.wa,msg),i*1500));
+  toast("📊 Report sent!");
+}
+
+// Missing makeDateField alias (used in some form renderers)
+function makeDateField(label,value,onChange){return makeDate(label,value,onChange);}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render(){
+  const app=document.getElementById("app");
+  if(!app) return;
+  try{
+    app.innerHTML="";
+    let screen;
+    switch(S.screen){
+      case "loading":  screen=renderLoading(); break;
+      case "login":    screen=renderLogin(); break;
+      case "home":     screen=renderHome(); break;
+      case "form":     screen=renderForm(); break;
+      case "admin":    screen=renderAdmin(); break;
+      case "reports":  screen=renderReports(); break;
+      case "history":  screen=renderHistory(); break;
+      case "viewer":   screen=renderViewer(); break;
+      default:         screen=renderLogin();
+    }
+    if(screen) app.appendChild(screen);
+  } catch(e){
+    console.error("Render error:",e);
+    app.innerHTML="";
+    const err=div({minHeight:"100vh",background:"#0F0E0C",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",textAlign:"center"});
+    err.appendChild(div({fontSize:"32px",marginBottom:"16px"},"⚠"));
+    err.appendChild(div({fontSize:"16px",fontWeight:"700",color:"#E85C38",marginBottom:"8px"},"Something went wrong"));
+    err.appendChild(div({fontSize:"13px",color:"rgba(240,237,232,0.5)",marginBottom:"24px"},"Screen: "+S.screen+" · "+e.message));
+    err.appendChild(btn({background:"#F0A500",border:"none",borderRadius:"10px",color:"#000",fontWeight:"800",fontSize:"15px",padding:"12px 24px"},"Reload App",()=>location.reload()));
+    app.appendChild(err);
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+render(); // show loading screen immediately
+fbInit().catch(e=>{
+  console.error("Firebase init failed:",e);
+  FB_READY=true;
+  S.screen="login";
+  render();
+});
+</script>
+</body>
+</html>

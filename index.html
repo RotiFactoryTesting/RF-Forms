@@ -194,27 +194,31 @@ let FB_READY=false;
 
 async function fbInit(){
   // Seed defaults if Firebase is empty
-  const [staffSnap,formsSnap]=await Promise.all([
-    get(ref(db,"staff")),get(ref(db,"forms_meta"))
-  ]);
-  if(!staffSnap.exists()){
-    const obj={};
-    DEFAULT_STAFF.forEach((s,i)=>{obj["s"+i]={...s};});
-    await set(ref(db,"staff"),obj);
-  }
-  if(!formsSnap.exists()){
-    await set(ref(db,"forms_meta"),DEFAULT_FORMS_META);
+  try{
+    const [staffSnap,formsSnap]=await Promise.all([
+      get(ref(db,"staff")),get(ref(db,"forms_meta"))
+    ]);
+    if(!staffSnap.exists()){
+      const obj={};
+      DEFAULT_STAFF.forEach((s,i)=>{obj["s"+i]={...s};});
+      await set(ref(db,"staff"),obj);
+    }
+    if(!formsSnap.exists()){
+      await set(ref(db,"forms_meta"),DEFAULT_FORMS_META);
+    }
+  }catch(e){
+    console.error("Startup Firebase read/seed blocked — continuing with local/default data:",e);
   }
   // Live listeners
   onValue(ref(db,"staff"),snap=>{
     const d=snap.val()||{};
     FB_STAFF=Object.entries(d).map(([k,v])=>({...v,_key:k}));
     if(FB_READY) render();
-  });
+  },err=>console.error("Staff read blocked:",err));
   onValue(ref(db,"forms_meta"),snap=>{
     FB_FORMS_META=snap.val()||{};
     if(FB_READY) render();
-  });
+  },err=>console.error("Forms meta read blocked:",err));
   onValue(ref(db,"submissions"),snap=>{
     FB_SUBMISSIONS=snap.val()||{};
     if(FB_READY) render();
@@ -224,29 +228,149 @@ async function fbInit(){
   render();
 }
 
-function getStaff(){return FB_STAFF.length?FB_STAFF:DEFAULT_STAFF;}
-function getFormsMeta(){return Object.keys(FB_FORMS_META).length?FB_FORMS_META:DEFAULT_FORMS_META;}
+function getStaff(){
+  const base=FB_STAFF.length?FB_STAFF:DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
+  const overrides=getLocalStaffOverrides();
+  if(!Object.keys(overrides).length) return base;
+  const merged=base
+    .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
+    .map(s=>(overrides[s._key]&&!overrides[s._key]._deleted)?{...overrides[s._key],_key:s._key}:s);
+  Object.keys(overrides).forEach(k=>{
+    if(k.startsWith("local_")&&!overrides[k]._deleted&&!merged.find(s=>s._key===k)) merged.push({...overrides[k],_key:k});
+  });
+  return merged;
+}
+function localFormsMetaKey(){return "rf_local_forms_meta";}
+function getLocalFormsMetaOverrides(){
+  try{const raw=localStorage.getItem(localFormsMetaKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
+}
+function setLocalFormsMetaOverride(name,data){
+  try{
+    const all=getLocalFormsMetaOverrides();
+    all[name]=data; // data may be {_deleted:true}
+    localStorage.setItem(localFormsMetaKey(),JSON.stringify(all));
+  }catch(e){console.error(e);}
+}
+function getFormsMeta(){
+  const base=Object.keys(FB_FORMS_META).length?FB_FORMS_META:DEFAULT_FORMS_META;
+  const overrides=getLocalFormsMetaOverrides();
+  if(!Object.keys(overrides).length) return base;
+  const merged={...base};
+  Object.entries(overrides).forEach(([name,data])=>{
+    if(data._deleted) delete merged[name];
+    else merged[name]=data;
+  });
+  return merged;
+}
 
 // Firebase write helpers
-async function fbSaveStaff(key,data){
-  if(key) await update(ref(db,"staff/"+key),data);
-  else await push(ref(db,"staff"),data);
+function localStaffKey(){return "rf_local_staff_overrides";}
+function getLocalStaffOverrides(){
+  try{const raw=localStorage.getItem(localStaffKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
 }
-async function fbDeleteStaff(key){await remove(ref(db,"staff/"+key));}
-async function fbSaveFormMeta(name,data){await set(ref(db,"forms_meta/"+name),data);}
-async function fbDeleteFormMeta(name){await remove(ref(db,"forms_meta/"+name));}
+function setLocalStaffOverride(key,data){
+  try{
+    const all=getLocalStaffOverrides();
+    all[key]=data; // data may be {_deleted:true} as a tombstone for a Firebase-backed record
+    localStorage.setItem(localStaffKey(),JSON.stringify(all));
+  }catch(e){console.error(e);}
+}
+async function fbSaveStaff(key,data){
+  try{
+    if(key) await update(ref(db,"staff/"+key),data);
+    else await push(ref(db,"staff"),data);
+    return true;
+  }catch(e){
+    console.error("Staff save failed, keeping on this device instead:",e);
+    setLocalStaffOverride(key||("local_"+Date.now()),data);
+    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
+    return true;
+  }
+}
+async function fbDeleteStaff(key){
+  if(String(key).startsWith("local_")){
+    const all=getLocalStaffOverrides();delete all[key];
+    try{localStorage.setItem(localStaffKey(),JSON.stringify(all));}catch(e){}
+    return;
+  }
+  try{
+    await remove(ref(db,"staff/"+key));
+  }catch(e){
+    console.error("Staff delete failed, hiding on this device instead:",e);
+    setLocalStaffOverride(key,{_deleted:true});
+    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
+  }
+}
+async function fbSaveFormMeta(name,data){
+  try{await set(ref(db,"forms_meta/"+name),data);return true;}
+  catch(e){
+    console.error("Form save failed, keeping on this device instead:",e);
+    setLocalFormsMetaOverride(name,data);
+    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
+    return true;
+  }
+}
+async function fbDeleteFormMeta(name){
+  try{await remove(ref(db,"forms_meta/"+name));}
+  catch(e){
+    console.error("Form delete failed, hiding on this device instead:",e);
+    setLocalFormsMetaOverride(name,{_deleted:true});
+    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
+  }
+}
+function localFieldsKey(){return "rf_local_custom_fields";}
+function getLocalFieldsOverrides(){
+  try{const raw=localStorage.getItem(localFieldsKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
+}
+function setLocalFieldOverride(formName,key,data){
+  try{
+    const all=getLocalFieldsOverrides();
+    const fk=formName.replace(/ /g,"_");
+    all[fk]=all[fk]||{};
+    all[fk][key]=data; // data may be {_deleted:true}
+    localStorage.setItem(localFieldsKey(),JSON.stringify(all));
+  }catch(e){console.error(e);}
+}
 async function fbSaveField(formName,fd){
   const key=fd._key||("f"+Date.now());
   const d={...fd};delete d._key;
-  await set(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key),d);
+  try{
+    await set(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key),d);
+    return true;
+  }catch(e){
+    console.error("Field save failed, keeping on this device instead:",e);
+    setLocalFieldOverride(formName,key,d);
+    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
+    return true;
+  }
 }
 async function fbDeleteField(formName,key){
-  await remove(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key));
+  try{
+    await remove(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key));
+  }catch(e){
+    console.error("Field delete failed, hiding on this device instead:",e);
+    setLocalFieldOverride(formName,key,{_deleted:true});
+    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
+  }
 }
 async function fbGetFields(formName){
-  const snap=await get(ref(db,"custom_fields/"+formName.replace(/ /g,"_")));
-  if(!snap.exists()) return [];
-  return Object.entries(snap.val()).map(([k,v])=>({...v,_key:k}));
+  const fk=formName.replace(/ /g,"_");
+  let fbFields=[];
+  try{
+    const snap=await get(ref(db,"custom_fields/"+fk));
+    if(snap.exists()) fbFields=Object.entries(snap.val()).map(([k,v])=>({...v,_key:k}));
+  }catch(e){
+    console.error("Fields read blocked, using local cache only:",e);
+  }
+  const overrides=getLocalFieldsOverrides()[fk]||{};
+  const seen=new Set(fbFields.map(f=>f._key));
+  const merged=fbFields
+    .filter(f=>!(overrides[f._key]&&overrides[f._key]._deleted))
+    .map(f=>(overrides[f._key]&&!overrides[f._key]._deleted)?{...overrides[f._key],_key:f._key}:f);
+  Object.entries(overrides).forEach(([k,v])=>{
+    if(!v._deleted&&!seen.has(k)) merged.push({...v,_key:k});
+  });
+  return merged;
 }
 // ── DRAFTS ────────────────────────────────────────────────────────────────────
 function draftKey(fn){
@@ -1005,7 +1129,7 @@ function renderAdminStaff(bdy){
       ()=>ss({editingStaff:{...s}})));
     if(!s.isAdmin) ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",
       color:C.red,borderRadius:"8px",padding:"6px 10px",fontSize:"12px"},"✕",
-      async()=>{if(confirm("Remove "+s.name+"?"))await fbDeleteStaff(s._key);}));
+      async()=>{if(confirm("Remove "+s.name+"?")){await fbDeleteStaff(s._key);render();}}));
     card.appendChild(ab);bdy.appendChild(card);
   });
 }
@@ -1074,7 +1198,7 @@ function renderAdminForms(bdy){
       ()=>ss({editingFormMeta:{...m,_origName:fname,name:fname}})));
     if(!m.builtin) ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",
       color:C.red,borderRadius:"8px",padding:"6px 10px",fontSize:"12px"},"✕",
-      async()=>{if(confirm("Delete form "+fname+"?"))await fbDeleteFormMeta(fname);}));
+      async()=>{if(confirm("Delete form "+fname+"?")){await fbDeleteFormMeta(fname);render();}}));
     card.appendChild(ab);bdy.appendChild(card);
   });
 }
@@ -1158,7 +1282,7 @@ function renderAdminFields(bdy){
         ()=>ss({editingField:{...f}})));
       ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
         borderRadius:"8px",padding:"5px 9px",fontSize:"11px"},"✕",
-        async()=>{if(confirm("Delete field?"))await fbDeleteField(fn,f._key);}));
+        async()=>{if(confirm("Delete field?")){await fbDeleteField(fn,f._key);render();}}));
       c.appendChild(ab);fieldsArea.appendChild(c);
     });
   }).catch(e=>console.error("Fields load error:",e));
@@ -2286,6 +2410,23 @@ function render(){
     app.appendChild(err);
   }
 }
+
+// ── AUTO-LOCK ON INACTIVITY ─────────────────────────────────────────────────
+const INACTIVITY_LOCK_MS=3*60*1000; // 3 minutes — change this number to adjust the timeout
+let inactivityTimer=null;
+function resetInactivityTimer(){
+  if(inactivityTimer) clearTimeout(inactivityTimer);
+  inactivityTimer=setTimeout(()=>{
+    if(S.user&&S.screen!=="login"){
+      ss({screen:"login",user:null,pin:"",pinError:false});
+      toast("🔒 Locked due to inactivity — enter PIN to continue",3000);
+    }
+  },INACTIVITY_LOCK_MS);
+}
+["click","touchstart","keydown","mousemove","scroll"].forEach(evt=>{
+  document.addEventListener(evt,resetInactivityTimer,{passive:true});
+});
+resetInactivityTimer();
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 render(); // show loading screen immediately

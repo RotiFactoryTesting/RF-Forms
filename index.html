@@ -264,7 +264,7 @@ function getStaff(){
   // Before Firebase finishes loading, use defaults temporarily.
   return DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
 }
-function getActiveStaffNames(){
+function GROOMING_STAFF{
   return [...new Set(getStaff().map(s=>String(s.name||"").trim()).filter(Boolean))];
 }
 function localFormsMetaKey(){return "rf_local_forms_meta";}

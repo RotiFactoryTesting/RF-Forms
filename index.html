@@ -79,7 +79,7 @@ const BREAKDOWN_ISSUES=["Hydraulic","Belt","Kapda","Tawa","Sensor","Motor","Hopp
 const MAINTENANCE_WORKS=["Paltu","Kapda","Belts","Pressing plate","Roller cloth","Shaft repair","Shaft change","Bearing change","Timing","Chain","Hydraulic oil","Paltu clean","Rollers change","Roller repair","Sensor change","Thimble","Oiling","Temperature controller","Burners clean","Tawa clean","Electrical work","Motor repair","Conveyor belts","Conveyor shafts","Pressing block","Hydraulic cylinder seal","Camera","Bearing housing"];
 const EQUIPMENT_LIST=["ROW Tank","UWW Tank 1","UWW Tank 2","UWW Tank 3","UTW Tank 1","UTW Tank 2","UTW Tank 3","ROW Chiller","SW Chiller","Weigh MC","Computers","Invertor","Genset","Motor timers","Big Coolers","Small Coolers","Insect Traps MC","Exhausts","Air Curtains","RO"];
 const ROUTES=Array.from({length:20},(_,i)=>"Route "+(i+1));
-const TRAINER_OPTIONS=["Bishwajeet","Ruchi","Kapil","Saurabh","Dharmendar","External Trainer","Other"];
+const TRAINER_OPTIONS=["Bishwajeet","Manish","Kapil","Saurabh","Dharmendar","External Trainer","Other"];
 const TRAINING_TOPICS=["Housekeeping","Equipment Handling","Deep Cleaning","M/C Ops","M/C Cleaning","Safety Guidelines","M/C Maintenance","Roti Sorting","Roti Quality","Roti Packing","Roti Storage","Personal Hygiene","Roti Pickup","Line Control","Line Reporting","Other"];
 const TRAINING_DURATIONS=["5 mins","10 mins","15 mins","20 mins","30 mins","45 mins","1 hour","Other"];
 const PEST_VENDORS=["Vendor A","Vendor B","Vendor C","Other"];
@@ -88,7 +88,7 @@ const MD_PARAMS=["1.7mm","1.4mm","1.0mm","0.1mm","Cleaning","Belt condition"];
 const ATTENDEE_GROUPS={
   "Drivers":["Ranjeet","Shainawaz","Vikas","Anwar","Kuldeep","Uday","Shaizad","Shanty","Pawan","Ranjeet Bike","Tejprakash"],
   "Housekeeping":["Monu"],
-  "Office":["Bishwajeet","Ram","Mohit","Kapil","Dharmendar","Kusum Madam","Ruchi"],
+  "Office":["Bishwajeet","Ram","Mohit","Kapil","Dharmendar","Kusum Madam","Manish"],
   "Machine Operators":["Dilip","Raju","Saagir","Ram Pramod","Mona","Mohd Avesh","Sanjay Marak"],
   "Atta Operators":["Mohan Rajak","Munna"],
   "Packing Staff":["Sunita","Priya","Chandrawati","Shanti","Sangeeta 1","Sangeeta 2","Julie","Rijwana","Jamna","Laxmi","Rekha","Renu","Janki","Hansa","Babita"],
@@ -167,7 +167,7 @@ function tOpts(opts){ return opts.map(o=>(S.user&&S.user.lang==="hi"&&HI[o])||o)
 const DEFAULT_STAFF=[
   {name:"Saurabh Mehta",pin:"1802",role:"MD",wa:"919810739747",forms:"ALL",alerts:true,reports:true,canReport:true,lang:"en",shift:null,isAdmin:true},
   {name:"Bishwajeet",pin:"2884",role:"Ops Manager",wa:"918860722884",forms:"Training Log,Pest Control,Metal Detector Calibration",alerts:true,reports:true,canReport:false,lang:"en",shift:null,isAdmin:false},
-  {name:"Ruchi",pin:"7611",role:"QA Supervisor",wa:"9650687611",forms:"QC Form,Grooming,Housekeeping",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
+  {name:"Manish",pin:"7611",role:"QA Supervisor",wa:"9650687611",forms:"QC Form,Grooming,Housekeeping",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
   {name:"Dharmendar",pin:"6368",role:"Production Staff",wa:"9210606368",forms:"Machine Status",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
   {name:"Shabaj",pin:"3058",role:"Maintenance",wa:"8769503058",forms:"Breakdown Report,Maintenance Report",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
   {name:"Kapil",pin:"8332",role:"Supervisor",wa:"9311248332",forms:"Delivery Checklist",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},

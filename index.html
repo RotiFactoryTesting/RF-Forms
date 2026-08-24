@@ -38,7 +38,6 @@ import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-ap
 import{getDatabase,ref,set,get,push,onValue,remove,update}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
-const FB_CFG={
  const FB_CFG={
   apiKey:"AIzaSyDAnEiIFrSy1qlvnkm_Cru6P5M72I75qks",
   authDomain:"rf-forms-e35ae.firebaseapp.com",
@@ -49,6 +48,7 @@ const FB_CFG={
   appId:"1:400914570419:web:270fcad018316c17f164c6",
   measurementId:"G-0TC53P4W98"
 };
+
 const fbApp=initializeApp(FB_CFG);
 const db=getDatabase(fbApp);
 

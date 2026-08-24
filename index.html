@@ -232,16 +232,37 @@ async function fbInit(){
 }
 
 function getStaff(){
-  const base=FB_STAFF.length?FB_STAFF:DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
   const overrides=getLocalStaffOverrides();
-  if(!Object.keys(overrides).length) return base;
-  const merged=base
-    .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
-    .map(s=>(overrides[s._key]&&!overrides[s._key]._deleted)?{...overrides[s._key],_key:s._key}:s);
-  Object.keys(overrides).forEach(k=>{
-    if(k.startsWith("local_")&&!overrides[k]._deleted&&!merged.find(s=>s._key===k)) merged.push({...overrides[k],_key:k});
-  });
-  return merged;
+
+  // Firebase has loaded: use ONLY Firebase staff.
+  // Do not fall back to DEFAULT_STAFF after Firebase is available.
+  if(FB_READY){
+    let base=FB_STAFF.slice();
+
+    const merged=base
+      .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
+      .map(s=>{
+        if(overrides[s._key]&&!overrides[s._key]._deleted){
+          return {...overrides[s._key],_key:s._key};
+        }
+        return s;
+      });
+
+    Object.keys(overrides).forEach(k=>{
+      if(
+        k.startsWith("local_") &&
+        !overrides[k]._deleted &&
+        !merged.find(s=>s._key===k)
+      ){
+        merged.push({...overrides[k],_key:k});
+      }
+    });
+
+    return merged;
+  }
+
+  // Before Firebase finishes loading, use defaults temporarily.
+  return DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
 }
 function getActiveStaffNames(){
   return [...new Set(getStaff().map(s=>String(s.name||"").trim()).filter(Boolean))];

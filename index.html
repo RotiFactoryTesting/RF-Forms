@@ -232,40 +232,16 @@ async function fbInit(){
 }
 
 function getStaff(){
+  const base=FB_STAFF.length?FB_STAFF:DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
   const overrides=getLocalStaffOverrides();
-
-  // Firebase has loaded: use ONLY Firebase staff.
-  // Do not fall back to DEFAULT_STAFF after Firebase is available.
-  if(FB_READY){
-    let base=FB_STAFF.slice();
-
-    const merged=base
-      .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
-      .map(s=>{
-        if(overrides[s._key]&&!overrides[s._key]._deleted){
-          return {...overrides[s._key],_key:s._key};
-        }
-        return s;
-      });
-
-    Object.keys(overrides).forEach(k=>{
-      if(
-        k.startsWith("local_") &&
-        !overrides[k]._deleted &&
-        !merged.find(s=>s._key===k)
-      ){
-        merged.push({...overrides[k],_key:k});
-      }
-    });
-
-    return merged;
-  }
-
-  // Before Firebase finishes loading, use defaults temporarily.
-  return DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
-}
-function GROOMING_STAFF{
-  return [...new Set(getStaff().map(s=>String(s.name||"").trim()).filter(Boolean))];
+  if(!Object.keys(overrides).length) return base;
+  const merged=base
+    .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
+    .map(s=>(overrides[s._key]&&!overrides[s._key]._deleted)?{...overrides[s._key],_key:s._key}:s);
+  Object.keys(overrides).forEach(k=>{
+    if(k.startsWith("local_")&&!overrides[k]._deleted&&!merged.find(s=>s._key===k)) merged.push({...overrides[k],_key:k});
+  });
+  return merged;
 }
 function localFormsMetaKey(){return "rf_local_forms_meta";}
 function getLocalFormsMetaOverrides(){
@@ -1634,27 +1610,17 @@ function renderQCEOS(bdy,meta){
 function renderTrainingLog(bdy,meta){
   bdy.appendChild(secHdr("Session Details",meta.color,"📋"));
   bdy.appendChild(makeDate("Date",gf("date"),v=>sf("date",v)));
-  const trainerOptions=[...getActiveStaffNames(),"External Trainer","Other"];
-  bdy.appendChild(makeDropdown("Trainer Name","",[...new Set(trainerOptions)],gf("trainer"),v=>sf("trainer",v),true));
+  bdy.appendChild(makeDropdown("Trainer Name","",TRAINER_OPTIONS,gf("trainer"),v=>sf("trainer",v),true));
   bdy.appendChild(makeDropdown("Topic Covered","",TRAINING_TOPICS,gf("topic"),v=>sf("topic",v),true));
   bdy.appendChild(makeDropdown("Duration","",TRAINING_DURATIONS,gf("duration"),v=>sf("duration",v),true));
   bdy.appendChild(div({fontSize:"15px",fontWeight:"700",color:C.text,marginBottom:"8px"},"Attendees"));
   const grpGrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"12px"});
-  const activeNames=new Set(getActiveStaffNames());
   Object.entries(ATTENDEE_GROUPS).forEach(([grp,members])=>{
-    const activeMembers=members.filter(name=>activeNames.has(name));
-    if(!activeMembers.length) return;
+    if(!members.length) return;
     grpGrid.appendChild(btn({padding:"9px 8px",background:C.surface,border:"1.5px solid "+C.border,
       borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"13px",textAlign:"center"},grp,
-      ()=>showMultiModal(grp,activeMembers,gf("attendees")||[],arr=>sf("attendees",arr))));
+      ()=>showMultiModal(grp,members,gf("attendees")||[],arr=>sf("attendees",arr))));
   });
-  const groupedNames=new Set(Object.values(ATTENDEE_GROUPS).flat());
-  const otherStaff=getActiveStaffNames().filter(name=>!groupedNames.has(name));
-  if(otherStaff.length){
-    grpGrid.appendChild(btn({padding:"9px 8px",background:C.surface,border:"1.5px solid "+C.border,
-      borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"13px",textAlign:"center"},"Other Staff",
-      ()=>showMultiModal("Other Staff",otherStaff,gf("attendees")||[],arr=>sf("attendees",arr))));
-  }
   bdy.appendChild(grpGrid);
   const attWrap=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"10px 12px",marginBottom:"16px"});
   attWrap.appendChild(div({fontSize:"12px",fontWeight:"700",color:C.muted,marginBottom:"6px"},"Selected Attendees"));
@@ -1771,7 +1737,7 @@ function renderGrooming(bdy,meta){
   GROOMING_PARAMS.forEach(param=>{
     const paramLabel=t(param)||param;
     const cur=S.groomingData[param]||[];
-    bdy.appendChild(makeMultiSelect(paramLabel,S.user.lang==="hi"?"खाली छोड़ें अगर सब ठीक है":"Leave blank if all OK",getActiveStaffNames(),cur,arr=>{S.groomingData[param]=arr;}));
+    bdy.appendChild(makeMultiSelect(paramLabel,S.user.lang==="hi"?"खाली छोड़ें अगर सब ठीक है":"Leave blank if all OK",GROOMING_STAFF,cur,arr=>{S.groomingData[param]=arr;}));
   });
   bdy.appendChild(makeRating(t("Overall Score"),"",gf("overall_score"),v=>sf("overall_score",v)));
   bdy.appendChild(makeText(t("Additional Issues"),"","",gf("issues"),v=>sf("issues",v)));

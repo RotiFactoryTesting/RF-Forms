@@ -445,17 +445,13 @@ function deleteLocalSubmission(fn,key){
   }catch(e){console.error(e);}
 }
 async function fbAddLog(fn,entry){
-  // Cache locally immediately, regardless of Firebase outcome — Reports/Download read
-  // from this too, so they always show what you just submitted on this device, even if
-  // Firebase read access is separately restricted from write access.
-  saveLocalSubmission(fn,entry);
   try{
     await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),entry);
     return true;
   }catch(e){
-    console.error("Firebase save failed, kept locally instead:",e);
-    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
-    return true;
+    console.error("Firebase save failed:",e);
+    toast("⚠ Could not save to shared cloud data. Retry when online.",3500);
+    return false;
   }
 }
 async function fbDelLog(fn,key){

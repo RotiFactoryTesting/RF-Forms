@@ -464,6 +464,9 @@ function removePendingSubmission(fn,entryId){
   const list=getPendingSubmissions().filter(item=>!(item.fn===fn&&item.entry.id===entryId));
   setPendingSubmissions(list);
 }
+function cleanSubmission(entry){
+  return JSON.parse(JSON.stringify(entry));
+}
 async function uploadPendingSubmission(item){
   await push(ref(db,"submissions/"+item.fn.replace(/ /g,"_")),item.entry);
   removePendingSubmission(item.fn,item.entry.id);
@@ -648,8 +651,9 @@ function el(tag,style,children,attrs){
     else e.setAttribute(k,v);
   });
   if(children!=null){
+    const cleanEntry=cleanSubmission(entry);
     (Array.isArray(children)?children:[children]).forEach(c=>{
-      if(c==null||c===false) return;
+      if(!queuePendingSubmission(fn,cleanEntry)){
       e.appendChild(typeof c==="string"?document.createTextNode(c):c);
     });
   }
@@ -731,12 +735,12 @@ function makeDropdown(label,hint,options,value,onChange,allowOther){
     sel.appendChild(opt);
   });
   if(allowOther){
-    const oo=document.createElement("option");
-    oo.value="__other__";oo.textContent="Other (type below)";
+    await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),cleanEntry);
+    removePendingSubmission(fn,cleanEntry.id);
     oo.style.cssText="background:#1e1b18;color:#F0EDE8;";
     if(value==="__other__") oo.selected=true;
     sel.appendChild(oo);
-  }
+    if(!queuePendingSubmission(fn,cleanEntry)){
   sel.addEventListener("change",e=>{
     sel.style.color=C.text;
     onChange(e.target.value);
@@ -1373,8 +1377,8 @@ async function startForm(fn){
   S.breakdownIssues=[];S.breakdownDetails={};S.maintenanceWorks=[];
   if(fn==="QC Form"){
     S.qcLineData={};S.qcEosData={wastage:{},oil:{},bestLine:"",training:"",issues:""};
+    S.qcRound="Start of Shift";S.qcInspTime=nowTime();
     S.qcSaving=false;S.qcSaved=false;S.qcAlertSent=false;
-    if(S.qcRound==="Current Time") S.qcInspTime=nowTime();
   }
   S.screen="form";
 

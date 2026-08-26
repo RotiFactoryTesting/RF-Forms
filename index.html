@@ -511,8 +511,9 @@ function notifyPendingSubmissions(){
 }
 window.addEventListener("online",notifyPendingSubmissions);
 async function fbAddLog(fn,entry){
+  const cleanEntry=cleanSubmission(entry);
   if(!navigator.onLine){
-    if(!queuePendingSubmission(fn,entry)){
+    if(!queuePendingSubmission(fn,cleanEntry)){
       toast("⚠ Could not store this submission on the device.",3500);
       return false;
     }
@@ -520,12 +521,12 @@ async function fbAddLog(fn,entry){
     return false;
   }
   try{
-    await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),entry);
-    removePendingSubmission(fn,entry.id);
+    await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),cleanEntry);
+    removePendingSubmission(fn,cleanEntry.id);
     return true;
   }catch(e){
     console.error("Firebase save failed:",e);
-    if(!queuePendingSubmission(fn,entry)){
+    if(!queuePendingSubmission(fn,cleanEntry)){
       toast("⚠ Could not save or store this submission locally.",3500);
       return false;
     }
@@ -651,9 +652,8 @@ function el(tag,style,children,attrs){
     else e.setAttribute(k,v);
   });
   if(children!=null){
-    const cleanEntry=cleanSubmission(entry);
     (Array.isArray(children)?children:[children]).forEach(c=>{
-      if(!queuePendingSubmission(fn,cleanEntry)){
+      if(c==null||c===false) return;
       e.appendChild(typeof c==="string"?document.createTextNode(c):c);
     });
   }

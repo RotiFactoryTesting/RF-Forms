@@ -444,13 +444,89 @@ function deleteLocalSubmission(fn,key){
     localStorage.setItem(localSubKey(fn),JSON.stringify(list));
   }catch(e){console.error(e);}
 }
+const PENDING_SUBMISSIONS_KEY="rf_pending_submissions";
+function getPendingSubmissions(){
+  try{
+    const raw=localStorage.getItem(PENDING_SUBMISSIONS_KEY);
+    return raw?JSON.parse(raw):[];
+  }catch(e){console.error("Pending submissions read failed:",e);return [];}
+}
+function setPendingSubmissions(list){
+  try{localStorage.setItem(PENDING_SUBMISSIONS_KEY,JSON.stringify(list));return true;}
+  catch(e){console.error("Pending submissions save failed:",e);return false;}
+}
+function queuePendingSubmission(fn,entry){
+  const list=getPendingSubmissions().filter(item=>!(item.fn===fn&&item.entry.id===entry.id));
+  list.push({fn,entry,queuedAt:new Date().toISOString()});
+  return setPendingSubmissions(list);
+}
+function removePendingSubmission(fn,entryId){
+  const list=getPendingSubmissions().filter(item=>!(item.fn===fn&&item.entry.id===entryId));
+  setPendingSubmissions(list);
+}
+async function uploadPendingSubmission(item){
+  await push(ref(db,"submissions/"+item.fn.replace(/ /g,"_")),item.entry);
+  removePendingSubmission(item.fn,item.entry.id);
+}
+function showPendingSubmissionsModal(){
+  const pending=getPendingSubmissions();
+  const modal=document.getElementById("modal");
+  if(!pending.length||!modal||modal.classList.contains("open")) return;
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"48px"},"☁"));
+  box.appendChild(div({fontSize:"18px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"6px"},
+    "Internet connection restored"));
+  box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",marginBottom:"20px"},
+    pending.length+" form "+(pending.length===1?"submission is":"submissions are")+" waiting to upload."));
+  box.appendChild(btn({width:"100%",background:C.amber,border:"none",borderRadius:"12px",
+    color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "↻ Retry Upload",async()=>{
+      const button=box.querySelector("button");
+      button.disabled=true;button.textContent="Uploading…";
+      let failed=0;
+      for(const item of getPendingSubmissions()){
+        try{await uploadPendingSubmission(item);}
+        catch(e){failed++;console.error("Pending submission upload failed:",e);}
+      }
+      if(failed){
+        modal.classList.remove("open");
+        toast("⚠ "+failed+" submission(s) still need internet. Try again later.",3500);
+      }else{
+        modal.classList.remove("open");
+        toast("✓ Offline submissions uploaded",3000);
+      }
+    }));
+  box.appendChild(btn({width:"100%",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"12px",color:C.muted,fontWeight:"700",fontSize:"15px",padding:"13px"},
+    "Later",()=>modal.classList.remove("open")));
+  modal.classList.add("open");
+  modal.onclick=e=>{if(e.target===modal)modal.classList.remove("open");};
+}
+function notifyPendingSubmissions(){
+  if(navigator.onLine) setTimeout(showPendingSubmissionsModal,500);
+}
+window.addEventListener("online",notifyPendingSubmissions);
 async function fbAddLog(fn,entry){
+  if(!navigator.onLine){
+    if(!queuePendingSubmission(fn,entry)){
+      toast("⚠ Could not store this submission on the device.",3500);
+      return false;
+    }
+    toast("✓ Saved securely on this device. It will upload when online.",3500);
+    return false;
+  }
   try{
     await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),entry);
+    removePendingSubmission(fn,entry.id);
     return true;
   }catch(e){
     console.error("Firebase save failed:",e);
-    toast("⚠ Could not save to shared cloud data. Retry when online.",3500);
+    if(!queuePendingSubmission(fn,entry)){
+      toast("⚠ Could not save or store this submission locally.",3500);
+      return false;
+    }
+    toast("✓ Saved securely on this device. It will upload when online.",3500);
     return false;
   }
 }
@@ -550,7 +626,7 @@ function showSaveFailedModal(fn,onRetry){
   const ttl=div({fontSize:"18px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"4px"});
   ttl.textContent="Couldn't Save "+fn;box.appendChild(ttl);
   box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",marginBottom:"20px"},
-    "Check your internet connection. Your answers are safe as a draft — nothing is lost."));
+    "Your completed submission is stored on this device. Retry when internet is available."));
   box.appendChild(div({height:"1px",background:C.border,marginBottom:"16px"}));
   box.appendChild(btn({width:"100%",background:C.amber,border:"none",borderRadius:"12px",
     color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
@@ -2436,6 +2512,7 @@ fbInit().catch(e=>{
   S.screen="login";
   render();
 });
+notifyPendingSubmissions();
 </script>
 </body>
 </html>

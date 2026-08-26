@@ -735,12 +735,12 @@ function makeDropdown(label,hint,options,value,onChange,allowOther){
     sel.appendChild(opt);
   });
   if(allowOther){
-    await push(ref(db,"submissions/"+fn.replace(/ /g,"_")),cleanEntry);
-    removePendingSubmission(fn,cleanEntry.id);
+    const oo=document.createElement("option");
+    oo.value="__other__";oo.textContent="Other (type below)";
     oo.style.cssText="background:#1e1b18;color:#F0EDE8;";
     if(value==="__other__") oo.selected=true;
     sel.appendChild(oo);
-    if(!queuePendingSubmission(fn,cleanEntry)){
+  }
   sel.addEventListener("change",e=>{
     sel.style.color=C.text;
     onChange(e.target.value);

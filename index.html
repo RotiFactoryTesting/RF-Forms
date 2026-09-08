@@ -1231,7 +1231,7 @@ function appendAttendanceTable(bdy,date,canEdit,type="staff"){
     });
     top.appendChild(status);card.appendChild(top);
     const meta=div({display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"9px",fontSize:"11px",color:C.muted});
-    meta.appendChild(span({},"Expected: "+row.expectedTime+" AM"));
+    meta.appendChild(span({},(type==="machine"?"Roti output time: ":"Expected: ")+row.expectedTime+" AM"));
     if(["present","on"].includes(row.status)){
       const actual=div({display:"flex",alignItems:"center",gap:"6px"});
       actual.appendChild(span({},"Time"));actual.appendChild(attendanceTimeInput(row,date,canEdit,type));

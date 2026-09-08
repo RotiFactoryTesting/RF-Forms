@@ -195,6 +195,7 @@ let FB_FORMS_META={};
 let FB_SUBMISSIONS={};
 let FB_ATTENDANCE_STAFF={};
 let FB_ATTENDANCE={};
+let FB_ATTENDANCE_SETTINGS={};
 let FB_READY=false;
 
 async function fbInit(){
@@ -237,6 +238,10 @@ async function fbInit(){
     FB_ATTENDANCE=snap.val()||{};
     if(FB_READY) render();
   },err=>console.error("Attendance read blocked:",err));
+  onValue(ref(db,"attendance_settings"),snap=>{
+    FB_ATTENDANCE_SETTINGS=snap.val()||{};
+    if(FB_READY) render();
+  },err=>console.error("Attendance settings read blocked:",err));
   FB_READY=true;
   S.screen="login";
   render();
@@ -279,6 +284,10 @@ async function saveAttendanceStaff(key,data){
 }
 async function deleteAttendanceStaff(key){
   try{await remove(ref(db,"attendance_staff/"+key));}catch(e){toast("⚠ Attendance staff could not be removed",3500);}
+}
+async function saveAttendanceSettings(data){
+  try{await update(ref(db,"attendance_settings"),data);}
+  catch(e){toast("⚠ Attendance settings could not be saved",3500);}
 }
 
 function getStaff(){
@@ -1219,28 +1228,103 @@ function renderAttendance(){
   const bdy=wrap();
   bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"14px"},"Today only · Attendance can be corrected until the day ends."));
   appendAttendanceTable(bdy,date,true);
+  const reportBox=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginTop:"18px"});
+  reportBox.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text,marginBottom:"6px"},"Today's attendance report"));
+  reportBox.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},"Download the attendance or send only absent names to the configured report number."));
+  reportBox.appendChild(btn({width:"100%",background:C.green+"18",border:"1px solid "+C.green+"55",borderRadius:"9px",color:C.green,fontWeight:"800",padding:"10px"},"Send today's attendance report",()=>ss({attendanceReportOpen:!S.attendanceReportOpen})));
+  if(S.attendanceReportOpen){
+    const actions=div({display:"flex",gap:"8px",marginTop:"8px"});
+    actions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"10px 6px",fontSize:"12px"},"Download report",()=>downloadAttendanceReport(date)));
+    actions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},"Send absent names",()=>sendAttendanceReport(date)));
+    reportBox.appendChild(actions);
+  }
+  bdy.appendChild(reportBox);
   bdy.appendChild(div({height:"30px"}));w.appendChild(bdy);return w;
+}
+
+function attendanceReportRows(date){
+  const local=getLocalAttendance(date);
+  return getAttendanceRows(date).map(row=>local[row._key]?{...row,...local[row._key]}:row);
+}
+
+function downloadAttendanceReport(date){
+  const rows=attendanceReportRows(date);
+  if(!rows.length){toast("No attendance staff configured");return;}
+  const csv=["Employee,Status,Expected Time,Actual Time",...rows.map(row=>[
+    row.name,row.status,row.expectedTime||"",row.actualTime||""
+  ].map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(","))].join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download="Attendance_"+date+".csv";a.click();
+  toast("✓ Attendance report downloaded");
+}
+
+function sendAttendanceReport(date){
+  const phone=String(FB_ATTENDANCE_SETTINGS.reportPhone||"").replace(/[^0-9]/g,"");
+  if(!phone){toast("Admin must set the attendance report number first");return;}
+  const absent=attendanceReportRows(date).filter(row=>row.status==="absent");
+  const names=absent.map(row=>row.name).filter(Boolean);
+  const label=new Date(date+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+  const msg="RF Factory attendance - "+label+"\n\n"+(names.length?"Absent:\n"+names.map(name=>"- "+name).join("\n"):"No absent employees.");
+  sendWA(phone,msg);
+  toast("✓ Attendance report opened in WhatsApp");
+}
+
+function attendanceRangeRows(from,to){
+  if(!from||!to||from>to) return [];
+  const rows=[];const cursor=new Date(from+"T00:00:00");const end=new Date(to+"T00:00:00");
+  while(cursor<=end){
+    const date=cursor.getFullYear()+"-"+pad(cursor.getMonth()+1)+"-"+pad(cursor.getDate());
+    attendanceReportRows(date).forEach(row=>rows.push({...row,date}));
+    cursor.setDate(cursor.getDate()+1);
+  }
+  return rows;
+}
+
+function downloadAttendanceRange(from,to){
+  const rows=attendanceRangeRows(from,to);
+  if(!rows.length){toast("Choose a valid attendance period");return;}
+  const csv=["Date,Employee,Status,Expected Time,Actual Time",...rows.map(row=>[
+    row.date,row.name,row.status,row.expectedTime||"",row.actualTime||""
+  ].map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(","))].join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download="Attendance_"+from+"_to_"+to+".csv";a.click();
+  toast("✓ Attendance period downloaded");
+}
+
+function sendAttendanceRange(from,to){
+  const phone=String(FB_ATTENDANCE_SETTINGS.reportPhone||"").replace(/[^0-9]/g,"");
+  if(!phone){toast("Admin must set the attendance report number first");return;}
+  const absent=attendanceRangeRows(from,to).filter(row=>row.status==="absent");
+  const msg="RF Factory attendance absences ("+from+" to "+to+")\n\n"+
+    (absent.length?absent.map(row=>row.date+" - "+row.name).join("\n"):"No absent employees.");
+  sendWA(phone,msg);
+  toast("✓ Attendance report opened in WhatsApp");
+}
+
+function renderAttendanceStaffEditor(bdy,es){
+  const card=div({background:C.surface,border:"1px solid "+C.amber+"55",borderRadius:"12px",padding:"14px",marginBottom:"10px"});
+  card.appendChild(div({fontSize:"13px",fontWeight:"800",color:C.amber,marginBottom:"10px"},es._key?"Edit attendance staff":"New attendance staff"));
+  card.appendChild(aInp("Employee name","name",es,"e.g. Ramesh Kumar"));
+  card.appendChild(aInp("Expected arrival time","expectedTime",es,"04:30","time"));
+  const actions=div({display:"flex",gap:"8px"});
+  actions.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"9px",padding:"11px",fontWeight:"800"},"Save",async()=>{
+    if(!es.name){toast("Name required");return;}
+    await saveAttendanceStaff(es._key,{name:String(es.name),expectedTime:es.expectedTime||"04:30"});
+    ss({editingAttendanceStaff:null});toast("✓ Attendance staff saved");
+  }));
+  actions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",padding:"11px",color:C.muted},"Cancel",()=>ss({editingAttendanceStaff:null})));
+  card.appendChild(actions);bdy.appendChild(card);
 }
 
 function renderAdminAttendance(bdy){
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"Attendance staff list"));
   bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"16px"},"+ Add Attendance Staff",
     ()=>ss({editingAttendanceStaff:{name:"",expectedTime:"04:30"}})));
-  if(S.editingAttendanceStaff){
-    const es=S.editingAttendanceStaff;
-    const card=div({background:C.surface,border:"1px solid "+C.amber+"55",borderRadius:"12px",padding:"14px",marginBottom:"16px"});
-    card.appendChild(aInp("Employee name","name",es,"e.g. Ramesh Kumar"));
-    card.appendChild(aInp("Expected arrival time","expectedTime",es,"04:30","time"));
-    const actions=div({display:"flex",gap:"8px"});
-    actions.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"9px",padding:"11px",fontWeight:"800"},"Save",async()=>{
-      if(!es.name){toast("Name required");return;}
-      await saveAttendanceStaff(es._key,{name:String(es.name),expectedTime:es.expectedTime||"04:30"});
-      ss({editingAttendanceStaff:null});toast("✓ Attendance staff saved");
-    }));
-    actions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",padding:"11px",color:C.muted},"Cancel",()=>ss({editingAttendanceStaff:null})));
-    card.appendChild(actions);bdy.appendChild(card);
-  }
+  if(S.editingAttendanceStaff&&!S.editingAttendanceStaff._key) renderAttendanceStaffEditor(bdy,S.editingAttendanceStaff);
   getAttendanceStaff().forEach(staff=>{
+    if(S.editingAttendanceStaff&&S.editingAttendanceStaff._key===staff._key) renderAttendanceStaffEditor(bdy,S.editingAttendanceStaff);
     const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"13px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"10px"});
     const info=div({flex:"1"});info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},staff.name));
     info.appendChild(div({fontSize:"12px",color:C.amber,marginTop:"3px"},"Expected: "+(staff.expectedTime||"04:30")+" AM"));card.appendChild(info);
@@ -1250,10 +1334,24 @@ function renderAdminAttendance(bdy){
   });
   bdy.appendChild(div({height:"1px",background:C.border,margin:"22px 0"}));
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Attendance report"));
+  const reportPhone=aInp("WhatsApp number for absent attendance reports","reportPhone",FB_ATTENDANCE_SETTINGS,"e.g. 919810000000");
+  bdy.appendChild(reportPhone);
+  bdy.appendChild(btn({background:C.green+"18",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,fontWeight:"800",padding:"9px 14px",marginBottom:"12px"},"Save report number",async()=>{await saveAttendanceSettings({reportPhone:String(FB_ATTENDANCE_SETTINGS.reportPhone||"")});toast("✓ Attendance report number saved");}));
   const dateInp=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"9px"},{type:"date",max:todayKey()});
   dateInp.value=S.attendanceDate||todayKey();dateInp.addEventListener("change",()=>ss({attendanceDate:dateInp.value}));bdy.appendChild(dateInp);
   bdy.appendChild(div({fontSize:"12px",color:C.muted,margin:"10px 0 12px"},"Late employees are shown first. Admin can correct any previous date, but not a future date."));
   appendAttendanceTable(bdy,S.attendanceDate||todayKey(),true);
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginTop:"22px",marginBottom:"10px"},"Download or send attendance period"));
+  const range=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"8px"});
+  const from=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"9px"},{type:"date",max:todayKey()});
+  const to=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"9px"},{type:"date",max:todayKey()});
+  from.value=S.attendanceFrom||todayKey();to.value=S.attendanceTo||todayKey();
+  from.addEventListener("change",()=>ss({attendanceFrom:from.value}));to.addEventListener("change",()=>ss({attendanceTo:to.value}));
+  range.appendChild(from);range.appendChild(to);bdy.appendChild(range);
+  const rangeActions=div({display:"flex",gap:"8px",marginBottom:"16px"});
+  rangeActions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"10px 6px",fontSize:"12px"},"Download period",()=>downloadAttendanceRange(from.value,to.value)));
+  rangeActions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},"Send absent names",()=>sendAttendanceRange(from.value,to.value)));
+  bdy.appendChild(rangeActions);
 }
 
 // ── ADMIN PANEL ───────────────────────────────────────────────────────────────

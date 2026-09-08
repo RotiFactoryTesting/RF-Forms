@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="theme-color" content="#0F0E0C"/>
 <title>RF Forms</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@500;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
@@ -193,13 +193,15 @@ const DEFAULT_FORMS_META={
 let FB_STAFF=[];
 let FB_FORMS_META={};
 let FB_SUBMISSIONS={};
+let FB_ATTENDANCE_STAFF={};
+let FB_ATTENDANCE={};
 let FB_READY=false;
 
 async function fbInit(){
   // Seed defaults if Firebase is empty
   try{
-    const [staffSnap,formsSnap]=await Promise.all([
-      get(ref(db,"staff")),get(ref(db,"forms_meta"))
+    const [staffSnap,formsSnap,attendanceStaffSnap]=await Promise.all([
+      get(ref(db,"staff")),get(ref(db,"forms_meta")),get(ref(db,"attendance_staff"))
     ]);
     if(!staffSnap.exists()){
       const obj={};
@@ -209,6 +211,7 @@ async function fbInit(){
     if(!formsSnap.exists()){
       await set(ref(db,"forms_meta"),DEFAULT_FORMS_META);
     }
+    if(!attendanceStaffSnap.exists()) await set(ref(db,"attendance_staff"),{});
   }catch(e){
     console.error("Startup Firebase read/seed blocked — continuing with local/default data:",e);
   }
@@ -226,9 +229,56 @@ async function fbInit(){
     FB_SUBMISSIONS=snap.val()||{};
     if(FB_READY) render();
   },err=>console.error("Submissions read blocked:",err));
+  onValue(ref(db,"attendance_staff"),snap=>{
+    FB_ATTENDANCE_STAFF=snap.val()||{};
+    if(FB_READY) render();
+  },err=>console.error("Attendance staff read blocked:",err));
+  onValue(ref(db,"attendance"),snap=>{
+    FB_ATTENDANCE=snap.val()||{};
+    if(FB_READY) render();
+  },err=>console.error("Attendance read blocked:",err));
   FB_READY=true;
   S.screen="login";
   render();
+}
+
+function todayKey(){
+  const d=new Date();
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+}
+function getAttendanceStaff(){
+  return Object.entries(FB_ATTENDANCE_STAFF).map(([key,value])=>({...value,_key:key}));
+}
+function getAttendanceRows(date){
+  const records=FB_ATTENDANCE[date]||{};
+  return getAttendanceStaff().map(staff=>({...staff,...(records[staff._key]||{}),
+    expectedTime:staff.expectedTime||"04:30",status:records[staff._key]?.status||"unmarked"}));
+}
+function timeMinutes(value){
+  const parts=String(value||"").split(":").map(Number);
+  return parts.length===2&&!parts.some(Number.isNaN)?parts[0]*60+parts[1]:null;
+}
+function attendanceIsLate(row){
+  return row.status==="present"&&timeMinutes(row.actualTime)>timeMinutes(row.expectedTime);
+}
+function attendanceLocalKey(date){return "rf_attendance_"+date;}
+function getLocalAttendance(date){
+  try{const raw=localStorage.getItem(attendanceLocalKey(date));return raw?JSON.parse(raw):{};}catch(e){return {};}
+}
+async function saveAttendance(date,staffKey,data){
+  try{await set(ref(db,"attendance/"+date+"/"+staffKey),data);}
+  catch(e){
+    const local=getLocalAttendance(date);local[staffKey]=data;
+    try{localStorage.setItem(attendanceLocalKey(date),JSON.stringify(local));}catch(ignore){}
+    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
+  }
+}
+async function saveAttendanceStaff(key,data){
+  try{if(key) await update(ref(db,"attendance_staff/"+key),data);else await push(ref(db,"attendance_staff"),data);}
+  catch(e){toast("⚠ Attendance staff could not be saved",3500);}
+}
+async function deleteAttendanceStaff(key){
+  try{await remove(ref(db,"attendance_staff/"+key));}catch(e){toast("⚠ Attendance staff could not be removed",3500);}
 }
 
 function getStaff(){
@@ -511,6 +561,10 @@ function notifyPendingSubmissions(){
 }
 window.addEventListener("online",notifyPendingSubmissions);
 async function fbAddLog(fn,entry){
+  if(!entry||!String(entry.user||"").trim()){
+    toast("⚠ Staff name is required before submitting",3500);
+    return false;
+  }
   const cleanEntry=cleanSubmission(entry);
   if(!navigator.onLine){
     if(!queuePendingSubmission(fn,cleanEntry)){
@@ -564,12 +618,15 @@ const S={
   // admin
   adminTab:"staff",
   editingStaff:null,
+  editingAttendanceStaff:null,
+  attendanceDate:null,
   editingFormMeta:null,
   editingField:null,
   editingFieldForm:null,
   // reports
   reportForm:null,
   reportRange:"today",
+  reportLine:null,
 };
 
 function ss(patch){Object.assign(S,patch);render();}
@@ -1052,6 +1109,19 @@ function renderHome(){
     stats.appendChild(c);
   });
   bdy.appendChild(stats);
+  if(u.canAttendance||u.isAdmin){
+    const attendanceCard=div({background:C.surface,border:"1px solid "+C.green+"55",borderRadius:"14px",
+      padding:"16px",marginBottom:"18px",display:"flex",alignItems:"center",gap:"14px",cursor:"pointer"},null,
+      {onClick:()=>ss({screen:"attendance",attendanceDate:todayKey()})});
+    attendanceCard.appendChild(div({width:"44px",height:"44px",background:C.green+"22",border:"1.5px solid "+C.green+"66",
+      borderRadius:"12px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px"},"✓"));
+    const attendanceInfo=div({flex:"1"});
+    attendanceInfo.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text},"Staff Attendance"));
+    attendanceInfo.appendChild(div({fontSize:"12px",color:C.muted,marginTop:"2px"},"Mark present or absent for today"));
+    attendanceCard.appendChild(attendanceInfo);
+    attendanceCard.appendChild(span({fontSize:"18px",color:C.muted},"→"));
+    bdy.appendChild(attendanceCard);
+  }
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"Your Forms"));
   forms.forEach(fn=>{
     const m=meta[fn]||{icon:"◉",color:C.amber,desc:""};
@@ -1085,24 +1155,126 @@ function renderHome(){
   w.appendChild(bdy);return w;
 }
 
+function attendanceTimeInput(row,date,canEdit){
+  const i=inp({width:"126px",minWidth:"126px",background:C.surface,border:"1px solid "+C.border,borderRadius:"7px",
+    color:C.text,fontSize:"13px",padding:"7px 6px",outline:"none"},{type:"time"});
+  i.value=row.actualTime||row.expectedTime||"04:30";
+  i.disabled=!canEdit||row.status!=="present";
+  i.addEventListener("change",async()=>{
+    row.actualTime=i.value;
+    await saveAttendance(date,row._key,{name:row.name,status:row.status,expectedTime:row.expectedTime,
+      actualTime:row.actualTime,updatedBy:S.user.name,updatedAt:new Date().toISOString()});
+    render();
+  });
+  return i;
+}
+
+function appendAttendanceTable(bdy,date,canEdit){
+  const local=getLocalAttendance(date);
+  const rows=getAttendanceRows(date).map(row=>local[row._key]?{...row,...local[row._key]}:row);
+  const ordered=canEdit&&S.user.isAdmin?rows.sort((a,b)=>Number(attendanceIsLate(b))-Number(attendanceIsLate(a))):rows;
+  if(!ordered.length){
+    bdy.appendChild(div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"18px",color:C.muted},"No attendance staff configured yet."));
+    return;
+  }
+  ordered.forEach(row=>{
+    const late=attendanceIsLate(row);
+    const card=div({background:late?C.red+"14":C.surface,border:"1px solid "+(late?C.red+"66":C.border),
+      borderRadius:"12px",padding:"13px",marginBottom:"8px"});
+    const top=div({display:"flex",alignItems:"center",gap:"10px"});
+    const name=div({flex:"1",fontSize:"14px",fontWeight:"800",color:C.text});
+    name.textContent=row.name;
+    top.appendChild(name);
+    if(late) top.appendChild(span({fontSize:"10px",fontWeight:"800",color:C.red,background:C.red+"22",padding:"4px 6px",borderRadius:"5px"},"LATE"));
+    const status=div({display:"flex",gap:"5px"});
+    ["present","absent"].forEach(value=>{
+      const selected=row.status===value;
+      const color=value==="present"?C.green:C.red;
+      status.appendChild(btn({border:"1px solid "+(selected?color:C.border),borderRadius:"7px",background:selected?color+"22":C.surface,
+        color:selected?color:C.muted,padding:"6px 8px",fontSize:"11px",fontWeight:"800"},(selected?"● ":"")+value[0].toUpperCase()+value.slice(1),async()=>{
+          if(!canEdit) return;
+          const next={name:row.name,status:value,expectedTime:row.expectedTime,
+            actualTime:value==="present"?(row.actualTime||row.expectedTime):"",updatedBy:S.user.name,updatedAt:new Date().toISOString()};
+          await saveAttendance(date,row._key,next);render();
+        }));
+    });
+    top.appendChild(status);card.appendChild(top);
+    const meta=div({display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"9px",fontSize:"11px",color:C.muted});
+    meta.appendChild(span({},"Expected: "+row.expectedTime+" AM"));
+    if(row.status==="present"){
+      const actual=div({display:"flex",alignItems:"center",gap:"6px"});
+      actual.appendChild(span({},"Time"));actual.appendChild(attendanceTimeInput(row,date,canEdit));
+      meta.appendChild(actual);
+    }
+    card.appendChild(meta);bdy.appendChild(card);
+  });
+}
+
+function renderAttendance(){
+  const date=todayKey();
+  if(!S.user||(S.user&&!S.user.isAdmin&&!S.user.canAttendance)) return renderHome();
+  resetInactivityTimer();
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr("✓ Staff Attendance",S.user.name,[],()=>ss({screen:"home"}),"← Home"));
+  const bdy=wrap();
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"14px"},"Today only · Attendance can be corrected until the day ends."));
+  appendAttendanceTable(bdy,date,true);
+  bdy.appendChild(div({height:"30px"}));w.appendChild(bdy);return w;
+}
+
+function renderAdminAttendance(bdy){
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"12px"},"Attendance staff list"));
+  bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"16px"},"+ Add Attendance Staff",
+    ()=>ss({editingAttendanceStaff:{name:"",expectedTime:"04:30"}})));
+  if(S.editingAttendanceStaff){
+    const es=S.editingAttendanceStaff;
+    const card=div({background:C.surface,border:"1px solid "+C.amber+"55",borderRadius:"12px",padding:"14px",marginBottom:"16px"});
+    card.appendChild(aInp("Employee name","name",es,"e.g. Ramesh Kumar"));
+    card.appendChild(aInp("Expected arrival time","expectedTime",es,"04:30","time"));
+    const actions=div({display:"flex",gap:"8px"});
+    actions.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"9px",padding:"11px",fontWeight:"800"},"Save",async()=>{
+      if(!es.name){toast("Name required");return;}
+      await saveAttendanceStaff(es._key,{name:String(es.name),expectedTime:es.expectedTime||"04:30"});
+      ss({editingAttendanceStaff:null});toast("✓ Attendance staff saved");
+    }));
+    actions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",padding:"11px",color:C.muted},"Cancel",()=>ss({editingAttendanceStaff:null})));
+    card.appendChild(actions);bdy.appendChild(card);
+  }
+  getAttendanceStaff().forEach(staff=>{
+    const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"13px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"10px"});
+    const info=div({flex:"1"});info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},staff.name));
+    info.appendChild(div({fontSize:"12px",color:C.amber,marginTop:"3px"},"Expected: "+(staff.expectedTime||"04:30")+" AM"));card.appendChild(info);
+    card.appendChild(btn({background:C.blue+"22",border:"1px solid "+C.blue+"44",borderRadius:"7px",color:C.blue,padding:"6px 9px",fontSize:"11px"},"Edit",()=>ss({editingAttendanceStaff:{...staff}})));
+    card.appendChild(btn({background:C.red+"18",border:"none",borderRadius:"7px",color:C.red,padding:"6px 9px",fontSize:"11px"},"Delete",async()=>{if(confirm("Remove "+staff.name+" from attendance?")){await deleteAttendanceStaff(staff._key);render();}}));
+    bdy.appendChild(card);
+  });
+  bdy.appendChild(div({height:"1px",background:C.border,margin:"22px 0"}));
+  bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Attendance report"));
+  const dateInp=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"9px"},{type:"date",max:todayKey()});
+  dateInp.value=S.attendanceDate||todayKey();dateInp.addEventListener("change",()=>ss({attendanceDate:dateInp.value}));bdy.appendChild(dateInp);
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,margin:"10px 0 12px"},"Late employees are shown first. Admin can correct any previous date, but not a future date."));
+  appendAttendanceTable(bdy,S.attendanceDate||todayKey(),true);
+}
+
 // ── ADMIN PANEL ───────────────────────────────────────────────────────────────
 function renderAdmin(){
   const w=div({minHeight:"100vh",background:C.bg});
   w.appendChild(makeHdr("⚙ Admin Panel",S.user.name+" · MD",[],()=>ss({screen:"home"}),"← Home"));
   const tabs=div({display:"flex",borderBottom:"2px solid "+C.border,background:"#1a1814"});
-  [{id:"staff",label:"👥 Staff"},{id:"forms",label:"📋 Forms"},{id:"fields",label:"⚙ Fields"}].forEach(tab=>{
+  [{id:"staff",label:"👥 Staff"},{id:"attendance",label:"✓ Attendance"},{id:"forms",label:"📋 Forms"},{id:"fields",label:"⚙ Fields"}].forEach(tab=>{
     const sel=(S.adminTab||"staff")===tab.id;
     tabs.appendChild(btn({flex:"1",padding:"14px 4px",border:"none",
       borderBottom:"3px solid "+(sel?C.amber:"transparent"),
       background:sel?"rgba(240,165,0,0.08)":"none",
       color:sel?C.amber:C.text,fontWeight:"800",fontSize:"15px"},
-      tab.label,()=>ss({adminTab:tab.id,editingStaff:null,editingFormMeta:null,editingField:null})));
+      tab.label,()=>ss({adminTab:tab.id,editingStaff:null,editingAttendanceStaff:null,editingFormMeta:null,editingField:null})));
   });
   w.appendChild(tabs);
   const bdy=wrap();
   try{
     const t=S.adminTab||"staff";
     if(t==="staff") renderAdminStaff(bdy);
+    else if(t==="attendance") renderAdminAttendance(bdy);
     else if(t==="forms") renderAdminForms(bdy);
     else renderAdminFields(bdy);
   } catch(e){
@@ -1135,7 +1307,7 @@ function renderAdminStaff(bdy){
   bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
     borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",
     marginBottom:"16px"},"+ Add New Staff Member",
-    ()=>ss({editingStaff:{name:"",pin:"",role:"",wa:"",forms:"",lang:"en",alerts:false,reports:false,canReport:false,isAdmin:false,shift:null}})));
+    ()=>ss({editingStaff:{name:"",pin:"",role:"",wa:"",forms:"",lang:"en",alerts:false,reports:false,canReport:false,canAttendance:false,isAdmin:false,shift:null}})));
 
   if(S.editingStaff!==null){
     const es=S.editingStaff;
@@ -1165,7 +1337,7 @@ function renderAdminStaff(bdy){
       }));
     // Flags
     const fr=div({display:"flex",gap:"6px",marginBottom:"12px"});
-    [{key:"alerts",label:"Gets Alerts"},{key:"canReport",label:"View Reports"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
+    [{key:"alerts",label:"Gets Alerts"},{key:"canReport",label:"View Reports"},{key:"canAttendance",label:"Take Attendance"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
       const sel=es[f.key]===true;
       const b=btn({flex:"1",padding:"8px 4px",border:"2px solid "+(sel?C.green:C.border),
         borderRadius:"8px",background:sel?C.green+"22":C.surface,
@@ -1184,6 +1356,7 @@ function renderAdminStaff(bdy){
         name:String(es.name),pin:String(es.pin),role:String(es.role||""),
         wa:String(es.wa||""),forms:toStr(es.forms)||"",
         alerts:!!es.alerts,reports:!!es.reports,canReport:!!es.canReport,
+        canAttendance:!!es.canAttendance,
         isAdmin:!!es.isAdmin,lang:es.lang||"en",shift:es.shift||null
       });
       ss({editingStaff:null});toast("✓ Staff saved");
@@ -2283,7 +2456,7 @@ function renderReports(){
   // Range
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Date Range"));
   const rr=div({display:"flex",gap:"7px",marginBottom:"20px",flexWrap:"wrap"});
-  [{v:"today",l:"Today"},{v:"week",l:"This Week"},{v:"month",l:"This Month"},{v:"all",l:"All Time"}].forEach(r=>{
+  [{v:"today",l:"Today"},{v:"week",l:"This Week"},{v:"previousWeek",l:"Previous Week"},{v:"month",l:"This Month"},{v:"all",l:"All Time"}].forEach(r=>{
     const sel=S.reportRange===r.v;
     rr.appendChild(btn({padding:"9px 16px",border:"2px solid "+(sel?C.green:C.border),
       borderRadius:"10px",background:sel?C.green+"22":C.surface,
@@ -2309,8 +2482,42 @@ function renderReports(){
       (m.icon||"")+" "+fn,()=>ss({reportForm:fn})));
   });
   bdy.appendChild(fr);
-  // Stats
   const filtered=getFilteredLogs(S.reportForm,S.reportRange);
+  if(S.reportForm==="QC Form"){
+    bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Filter by Line"));
+    const lr=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"20px"});
+    [{v:null,l:"All Lines"},...QC_LINES.map(line=>({v:line,l:line}))].forEach(line=>{
+      const selected=S.reportLine===line.v;
+      lr.appendChild(btn({padding:"8px 14px",border:"2px solid "+(selected?C.amber:C.border),
+        borderRadius:"10px",background:selected?C.amber+"22":C.surface,
+        color:selected?C.amber:C.muted,fontWeight:"700",fontSize:"13px"},line.l,()=>ss({reportLine:line.v})));
+    });
+    bdy.appendChild(lr);
+    const lineLogs=filtered.filter(log=>log.formName==="QC Form");
+    const lineDetails=div({marginBottom:"20px"});
+    lineLogs.forEach(log=>{
+      const flat=flattenLog(log);
+      const lineKeys=Object.keys(flat).filter(key=>{
+        if(!S.reportLine) return /^Line \d+ /.test(key);
+        return key.startsWith(S.reportLine+" ");
+      });
+      if(!lineKeys.length) return;
+      const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginBottom:"10px"});
+      card.appendChild(div({fontSize:"13px",fontWeight:"800",color:C.text,marginBottom:"10px"},
+        (log.user||"Unknown staff")+" · "+new Date(log.timestamp).toLocaleString("en-IN")));
+      lineKeys.forEach(key=>{
+        const answer=String(flat[key]);
+        const problem=reportValueIsProblem(key,answer);
+        const row=div({display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:"10px",padding:"7px 0",borderTop:"1px solid "+C.border});
+        row.appendChild(div({fontSize:"12px",color:C.muted,overflowWrap:"anywhere"},key));
+        row.appendChild(div({fontSize:"13px",fontWeight:"700",color:problem?"#9B1C1C":C.text,background:problem?"#FDE2E2":"transparent",padding:"2px 5px",borderRadius:"4px",overflowWrap:"anywhere"},answer));
+        card.appendChild(row);
+      });
+      lineDetails.appendChild(card);
+    });
+    if(lineDetails.children.length) bdy.appendChild(lineDetails);
+  }
+  // Stats
   const byForm={};filtered.forEach(l=>{byForm[l.formName]=(byForm[l.formName]||0)+1;});
   const byStaff={};filtered.forEach(l=>{byStaff[l.user]=(byStaff[l.user]||0)+1;});
   const stats=div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"20px"});
@@ -2364,25 +2571,43 @@ function renderReports(){
 function getFilteredLogs(formFilter,range){
   const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
   const now=new Date();
+  const bounds=getReportRangeBounds(range,now);
   const logs=[];
   forms.forEach(fn=>{
     getFormLogs(fn).forEach(log=>{
       const d=new Date(log.timestamp);
       let ok=true;
-      if(range==="today") ok=d.toDateString()===now.toDateString();
-      else if(range==="week"){const w=new Date(now);w.setDate(now.getDate()-7);ok=d>=w;}
-      else if(range==="month"){const m=new Date(now);m.setMonth(now.getMonth()-1);ok=d>=m;}
+      if(bounds) ok=d>=bounds.start&&d<bounds.end;
       if(ok) logs.push(log);
     });
   });
   return logs.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
 }
 
+function getReportRangeBounds(range,now=new Date()){
+  const startOfDay=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  if(range==="today") return {start:startOfDay,end:new Date(startOfDay.getTime()+86400000)};
+  if(range==="week") return {start:new Date(startOfDay.getTime()-7*86400000),end:new Date(now.getTime()+1)};
+  if(range==="previousWeek"){
+    const monday=new Date(startOfDay);
+    const day=monday.getDay()||7;
+    monday.setDate(monday.getDate()-day+1);
+    return {start:new Date(monday.getTime()-7*86400000),end:monday};
+  }
+  if(range==="month"){
+    const month=new Date(startOfDay);month.setMonth(month.getMonth()-1);
+    return {start:month,end:new Date(now.getTime()+1)};
+  }
+  return null;
+}
+
 function flattenLog(log){
   const flat={
+    Form:log.formName||"",
     Date:new Date(log.timestamp).toLocaleDateString("en-IN"),
     Time:new Date(log.timestamp).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}),
-    Staff:log.user||"",Role:log.role||"",Mode:log.mode||"",Shift:log.shift||"",
+    "Staff Name":log.user||"",Role:log.role||"",Mode:log.mode||"",Shift:log.shift||"",
+    Round:log.round||"", "Inspection Time":log.inspectionTime||"",
   };
   function ext(obj,pfx){
     if(!obj||typeof obj!=="object") return;
@@ -2396,10 +2621,128 @@ function flattenLog(log){
   }
   if(log.data) ext(log.data,"");
   if(log.machineData) ext(log.machineData,"");
+  if(log.lineData) Object.entries(log.lineData).forEach(([line,data])=>ext(data,line));
+  if(log.eosData) ext(log.eosData,"End of Shift");
   if(log.entries) log.entries.forEach((e,i)=>ext(e,"Visitor "+(i+1)));
   if(log.issues) flat["Issues"]=log.issues.join(", ");
   if(log.worksCompleted) flat["Works Completed"]=log.worksCompleted.join(", ");
   return flat;
+}
+
+function reportValueIsProblem(key,value){
+  if(value===null||value===undefined||value==="") return false;
+  const text=String(value).trim().toLowerCase();
+  const field=String(key).toLowerCase();
+  if(field==="staff name"&&text==="") return true;
+  if(["not ok","not-run","not run","failed","pending","ongoing","partially fixed","partial","dirty","out of service"].includes(text)) return true;
+  if(text==="no"&&/(ppe|packaging|quantity|butter|oil|glove|uniform|puff|intact|match)/.test(field)) return true;
+  if(["yes","हाँ"].includes(text)&&/(jewellery|pest sighting|pest signs)/.test(field)) return true;
+  if((field.includes("rating")||field.includes("cleanliness")||field.includes("surface")||field.includes("conveyor")||field.includes("floor")||field.includes("uniform")||field.includes("color"))&&Number(value)<=2) return true;
+  return false;
+}
+
+function makeReportRows(logs){
+  return logs.map(log=>{
+    const row=flattenLog(log);
+    const jewelleryKey=Object.keys(row).find(key=>key.toLowerCase().includes("jewellery"));
+    const defaulterKeys=Object.keys(row).filter(key=>key.toLowerCase().includes("defaulter"));
+    const jewelleryYes=jewelleryKey&&["yes","हाँ"].includes(String(row[jewelleryKey]).toLowerCase());
+    if(jewelleryYes){
+      const names=defaulterKeys.map(key=>row[key]).filter(Boolean).join(", ");
+      row["Jewellery Worn Note"]=names?"Yes — Defaulter name: "+names:"Yes — Defaulter name not entered";
+    }
+    const problems=Object.entries(row).filter(([key,value])=>reportValueIsProblem(key,value)).map(([key,value])=>key+": "+value);
+    row.Result=problems.length?"Needs Correction":"OK";
+    row.Problems=problems.join(" | ");
+    return row;
+  });
+}
+
+function makeReadableReportRows(logs){
+  const rows=[];
+  logs.forEach(log=>{
+    const flat=flattenLog(log);
+    const metaKeys=new Set(["Form","Date","Time","Staff Name","Role","Mode","Shift","Round","Inspection Time"]);
+    const jewelleryKey=Object.keys(flat).find(key=>key.toLowerCase().includes("jewellery"));
+    const defaulterKeys=Object.keys(flat).filter(key=>key.toLowerCase().includes("defaulter"));
+    const jewelleryYes=jewelleryKey&&["yes","हाँ"].includes(String(flat[jewelleryKey]).toLowerCase());
+    const entries=Object.entries(flat).filter(([key,value])=>!metaKeys.has(key)&&value!==null&&value!==undefined&&value!=="");
+    const orderedEntries=[];
+    entries.forEach(entry=>{
+      if(entry[0]===jewelleryKey){
+        orderedEntries.push(entry);
+        defaulterKeys.forEach(defaulterKey=>{
+          const defaulterEntry=entries.find(([key])=>key===defaulterKey);
+          if(defaulterEntry&&!orderedEntries.some(([key])=>key===defaulterKey)) orderedEntries.push(defaulterEntry);
+        });
+      }else if(!defaulterKeys.includes(entry[0])) orderedEntries.push(entry);
+    });
+    orderedEntries.forEach(([key,value])=>{
+      let note="";
+      if(jewelleryYes&&key===jewelleryKey){
+        const names=defaulterKeys.map(defaulterKey=>flat[defaulterKey]).filter(Boolean).join(", ");
+        note=names?"Yes — Defaulter name: "+names:"Yes — Defaulter name not entered";
+      }
+      rows.push({
+        Form:flat.Form,"Staff Name":flat["Staff Name"],Date:flat.Date,Time:flat.Time,
+        Line:getReportLine(key),"Substance / Check":getReportQuestion(key),Answer:String(value),
+        Result:(reportValueIsProblem(key,value)||key.toLowerCase().includes("defaulter"))?"Needs Correction":"OK",Note:note,
+      });
+    });
+  });
+  return rows;
+}
+
+function getReportLine(key){
+  const match=String(key).match(/^(Line \d+|MC (?:RP|\d+)|Visitor \d+)/i);
+  return match?match[1]:"";
+}
+
+function getReportQuestion(key){
+  return String(key).replace(/^(Line \d+|MC (?:RP|\d+)|Visitor \d+)\s*/i,"");
+}
+
+function styleReportSheet(ws,keys,rows){
+  const headerStyle={fill:{fgColor:{rgb:"1E1B18"}},font:{bold:true,color:{rgb:"F0EDE8"}},alignment:{wrapText:true,vertical:"center"}};
+  keys.forEach((key,col)=>{
+    const cell=ws[XLSX.utils.encode_cell({r:0,c:col})];
+    if(cell) cell.s=headerStyle;
+  });
+  rows.forEach((row,rowIndex)=>{
+    keys.forEach((key,col)=>{
+      const cell=ws[XLSX.utils.encode_cell({r:rowIndex+1,c:col})];
+      if(!cell) return;
+      if(key==="Result"&&row[key]==="Needs Correction"||reportValueIsProblem(key,row[key])){
+        cell.s={fill:{fgColor:{rgb:"FDE2E2"}},font:{color:{rgb:"9B1C1C"},bold:true},alignment:{wrapText:true,vertical:"top"}};
+      }else cell.s={alignment:{wrapText:true,vertical:"top"}};
+    });
+  });
+  ws["!freeze"]={xSplit:0,ySplit:1};
+  ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length,c:keys.length-1}})};
+}
+
+function styleSummarySheet(ws,lastRow,lastCol){
+  const headerStyle={fill:{fgColor:{rgb:"1E1B18"}},font:{bold:true,color:{rgb:"F0EDE8"}},alignment:{wrapText:true,vertical:"center"}};
+  for(let col=0;col<=lastCol;col++){
+    const cell=ws[XLSX.utils.encode_cell({r:3,c:col})];
+    if(cell) cell.s=headerStyle;
+  }
+  for(let row=4;row<=lastRow;row++){
+    const result=ws[XLSX.utils.encode_cell({r:row,c:3})];
+    if(result&&result.v>0) result.s={fill:{fgColor:{rgb:"FDE2E2"}},font:{color:{rgb:"9B1C1C"},bold:true}};
+  }
+  ws["!freeze"]={xSplit:0,ySplit:4};
+  ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:3,c:0},e:{r:lastRow,c:lastCol}})};
+  ws["!pageSetup"]={orientation:"landscape",fitToWidth:1,fitToHeight:1,scale:1};
+  ws["!pageMargins"]={left:0.25,right:0.25,top:0.4,bottom:0.4,header:0.2,footer:0.2};
+  ws["!printArea"]="A1:F"+(lastRow+1);
+}
+
+function safeSheetName(name,used){
+  let base=String(name).replace(/[\\/?*\[\]:]/g," ").trim().slice(0,31)||"Report";
+  let result=base;let count=2;
+  while(used.has(result)){const suffix=" "+count++;result=base.slice(0,31-suffix.length)+suffix;}
+  used.add(result);return result;
 }
 
 function downloadMasterExcel(formFilter,range){
@@ -2408,32 +2751,45 @@ function downloadMasterExcel(formFilter,range){
   const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
   const now=new Date();
   let sheets=0;
+  const allLogs=getFilteredLogs(formFilter,range);
+  if(!allLogs.length){toast("No data in selected range");return;}
+  const usedSheets=new Set(["Summary"]);
+  const summaryRows=[["RF Forms Report Summary"],["Period",range,"Generated",now.toLocaleString("en-IN")],["Total Submissions",allLogs.length],["Report","Submissions","OK","Needs Correction","Staff","Latest Entry"]];
   forms.forEach(fn=>{
-    const logs=getFilteredLogs(fn,range).filter(l=>l.formName===fn);
+    const logs=getFilteredLogs(fn,range).filter(log=>log.formName===fn);
     if(!logs.length) return;
-    const rows=logs.map(l=>flattenLog(l));
-    const keys=[];const ks=new Set();
-    rows.forEach(r=>Object.keys(r).forEach(k=>{if(!ks.has(k)){ks.add(k);keys.push(k);}}));
-    const ws=XLSX.utils.aoa_to_sheet([keys,...rows.map(r=>keys.map(k=>r[k]||""))]);
-    ws["!cols"]=keys.map(k=>({wch:Math.max(k.length,14)}));
-    XLSX.utils.book_append_sheet(wb,ws,fn.slice(0,31));
+    const reportRows=makeReportRows(logs);
+    const needsCorrection=reportRows.filter(row=>row.Result==="Needs Correction").length;
+    const staff=[...new Set(logs.map(log=>log.user).filter(Boolean))].join(", ");
+    const latest=logs.map(log=>new Date(log.timestamp)).sort((a,b)=>b-a)[0];
+    summaryRows.push([fn,logs.length,logs.length-needsCorrection,needsCorrection,staff,latest.toLocaleString("en-IN")]);
+  });
+  const totalNeeds=summaryRows.slice(4).reduce((sum,row)=>sum+Number(row[3]||0),0);
+  summaryRows.push(["TOTAL",allLogs.length,allLogs.length-totalNeeds,totalNeeds,[...new Set(allLogs.map(log=>log.user).filter(Boolean))].join(", "),""]);
+  const sw=XLSX.utils.aoa_to_sheet(summaryRows);
+  sw["!cols"]=[{wch:30},{wch:15},{wch:12},{wch:20},{wch:34},{wch:24}];
+  styleSummarySheet(sw,summaryRows.length-1,5);
+  XLSX.utils.book_append_sheet(wb,sw,"Summary");
+  forms.forEach(fn=>{
+    const logs=getFilteredLogs(fn,range).filter(log=>log.formName===fn);
+    if(!logs.length) return;
+    const readableRows=makeReadableReportRows(logs);
+    const readableKeys=["Form","Staff Name","Date","Time","Line","Substance / Check","Answer","Result","Note"];
+    const ws=XLSX.utils.aoa_to_sheet([readableKeys,...readableRows.map(row=>readableKeys.map(key=>row[key]??""))]);
+    ws["!cols"]=[{wch:28},{wch:22},{wch:13},{wch:10},{wch:12},{wch:34},{wch:26},{wch:20},{wch:42}];
+    styleReportSheet(ws,readableKeys,readableRows);
+    XLSX.utils.book_append_sheet(wb,ws,safeSheetName(fn,usedSheets));
     sheets++;
   });
-  if(!sheets){toast("No data in selected range");return;}
-  // Summary
-  const sum=[["Form","Submissions","Range","Downloaded"]];
-  forms.forEach(fn=>{const n=getFilteredLogs(fn,range).filter(l=>l.formName===fn).length;if(n)sum.push([fn,n,range,now.toLocaleString("en-IN")]);});
-  const sw=XLSX.utils.aoa_to_sheet(sum);sw["!cols"]=[{wch:30},{wch:15},{wch:12},{wch:22}];
-  XLSX.utils.book_append_sheet(wb,sw,"Summary");
-  XLSX.writeFile(wb,"RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_"+now.toISOString().slice(0,10)+".xlsx");
+  XLSX.writeFile(wb,"RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_Reports_"+now.toISOString().slice(0,10)+".xlsx");
   toast("✓ Excel downloaded — "+sheets+" sheet(s)");
 }
 
 function exportCSV(fn,logs){
-  const rows=logs.map(l=>flattenLog(l));
+  const rows=makeReadableReportRows(logs);
   if(!rows.length) return;
-  const keys=[];const ks=new Set();rows.forEach(r=>Object.keys(r).forEach(k=>{if(!ks.has(k)){ks.add(k);keys.push(k);}}));
-  const csv=[keys,...rows.map(r=>keys.map(k=>'"'+String(r[k]||"").replace(/"/g,"'")+'"'))].map(r=>r.join(",")).join("\n");
+  const keys=["Form","Staff Name","Date","Time","Line","Substance / Check","Answer","Result","Note"];
+  const csv=[keys,...rows.map(row=>keys.map(key=>'"'+String(row[key]??"").replace(/"/g,"'")+'"'))].map(r=>r.join(",")).join("\n");
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download=fn.replace(/ /g,"_")+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
@@ -2472,6 +2828,7 @@ function render(){
       case "login":    screen=renderLogin(); break;
       case "home":     screen=renderHome(); break;
       case "form":     screen=renderForm(); break;
+      case "attendance": screen=renderAttendance(); break;
       case "admin":    screen=renderAdmin(); break;
       case "reports":  screen=renderReports(); break;
       case "history":  screen=renderHistory(); break;
@@ -2497,7 +2854,7 @@ let inactivityTimer=null;
 function resetInactivityTimer(){
   if(inactivityTimer) clearTimeout(inactivityTimer);
   inactivityTimer=setTimeout(()=>{
-    if(S.user&&S.screen!=="login"){
+    if(S.user&&S.screen!=="login"&&S.screen!=="attendance"){
       ss({screen:"login",user:null,pin:"",pinError:false});
       toast("🔒 Locked due to inactivity — enter PIN to continue",3000);
     }

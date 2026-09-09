@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#0F0E0C"/>
 <title>RF Forms</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Mono:wght@500;700&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
@@ -2610,6 +2611,12 @@ function renderReports(){
     "⬇ Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange));
   w.appendChild(makeHdr("📊 Reports",S.user.name,[dlBtn],()=>ss({screen:"home"}),"← Back"));
   const bdy=wrap();
+  if(S.user.isAdmin){
+    bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
+      borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"14px",padding:"13px",
+      marginBottom:"18px",display:"block"},
+      "📈 Daily Report Card (All Forms)",()=>ss({screen:"reportHub"})));
+  }
   // Range
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Date Range"));
   const rr=div({display:"flex",gap:"7px",marginBottom:"20px",flexWrap:"wrap"});
@@ -2952,6 +2959,700 @@ function exportCSV(fn,logs){
   a.download=fn.replace(/ /g,"_")+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
 }
 
+// ── COMPLIANCE REPORTS (all forms) ─────────────────────────────────────────────
+const QC_CHECKS=[
+  {key:"butter_paper",label:"Butter Paper"},
+  {key:"color",label:"Color",rating:true},
+  {key:"conveyor",label:"Conveyor",rating:true},
+  {key:"diameter",label:"Diameter",bad:v=>v==="Not OK"||v==="ठीक नहीं"},
+  {key:"floor",label:"Floor",rating:true},
+  {key:"jewellery",label:"Jewellery",bad:v=>v==="Yes"||v==="हाँ"},
+  {key:"defaulters",label:"Defaulters",bad:v=>!!(v&&String(v).trim())},
+  {key:"pack_weight",label:"Pack Weight"},
+  {key:"pest",label:"Pest Sighting",bad:v=>v==="Yes"||v==="हाँ"},
+  {key:"ppe",label:"PPE Compliance",bad:v=>v==="No"||v==="नहीं"},
+  {key:"prepack_temp",label:"Pre-Pack Temp",bad:v=>parseFloat(v)>40},
+  {key:"puff",label:"Puff",bad:v=>v==="No"||v==="नहीं"},
+  {key:"stack_temp",label:"Stack Temp"},
+  {key:"surface",label:"Surface",rating:true},
+  {key:"texture",label:"Texture"},
+  {key:"uniform",label:"Uniform",rating:true},
+  {key:"weight",label:"Weight"},
+];
+
+// Each entry mirrors the same pass/fail logic already used for WhatsApp alerts
+// on submit, so the report always agrees with what the app already flags.
+const FORM_REPORT_CONFIG={
+  "QC Form":{groupLabel:"Line",namesLabel:"Named As Defaulter",extract(log){
+    const out=[];const ld=log.lineData||{};
+    Object.entries(ld).forEach(([line,vals])=>{
+      if(!vals||typeof vals!=="object") return;
+      QC_CHECKS.forEach(chk=>{
+        const v=vals[chk.key];
+        if(v===undefined||v===null||v==="") return;
+        const bad=chk.rating?parseFloat(v)<=2:(chk.bad?chk.bad(v):false);
+        out.push({group:line,label:chk.label,bad,
+          names:(chk.key==="defaulters"&&bad)?String(v).split(",").map(s=>s.trim()).filter(Boolean):null});
+      });
+    });
+    return out;
+  }},
+  "Grooming":{groupLabel:"Department",namesLabel:"Named For Grooming Issues",extract(log){
+    const d=log.data||{};const grp=d.dept||"—";const out=[];
+    const gc=d.groomingChecks||{};
+    GROOMING_PARAMS.forEach(p=>{
+      const arr=gc[p]||[];
+      out.push({group:grp,label:p,bad:arr.length>0,names:arr.length?arr:null});
+    });
+    if(d.overall_score!==undefined&&d.overall_score!=="")
+      out.push({group:grp,label:"Overall Score",bad:parseFloat(d.overall_score)<=2});
+    return out;
+  }},
+  "Housekeeping":{groupLabel:"Shift",namesLabel:null,extract(log){
+    const d=log.data||{};const grp=d.shift||"—";const out=[];
+    ["Production floor","Machines & conveyors","Drainage","Storage area","Packaging area",
+     "Raw material area","Toilets","Wash basins","Common areas","Office area","Entrance / lobby"].forEach(area=>{
+      const v=d[area];if(v===undefined||v==="") return;
+      out.push({group:grp,label:area,bad:parseFloat(v)<=2});
+    });
+    if(d.pest_signs!==undefined) out.push({group:grp,label:"Pest Signs",bad:d.pest_signs==="Yes"});
+    if(d.soap!==undefined) out.push({group:grp,label:"Soap/Sanitiser",bad:d.soap==="Empty"});
+    return out;
+  }},
+  "Machine Status":{groupLabel:"Machine",namesLabel:null,extract(log){
+    const out=[];const md=log.machineData||{};
+    Object.entries(md).forEach(([m,params])=>{
+      if(!params||typeof params!=="object") return;
+      if(params._status) out.push({group:m,label:"Machine Running",bad:params._status==="Not-Run"});
+      Object.entries(params).forEach(([p,pd])=>{
+        if(p==="_status"||!pd||typeof pd!=="object") return;
+        if(pd.status) out.push({group:m,label:p,bad:pd.status==="Not OK"});
+      });
+    });
+    return out;
+  }},
+  "Breakdown Report":{groupLabel:"Machine",namesLabel:null,extract(log){
+    const d=log.data||{};const grp=d.machine||"—";const out=[];
+    out.push({group:grp,label:"Resolved Same Day",bad:d.bd_status==="Pending"||d.bd_status==="Ongoing"});
+    (d.issues||[]).forEach(iss=>out.push({group:grp,label:iss,bad:true}));
+    return out;
+  }},
+  "Maintenance Report":{groupLabel:"Machine",namesLabel:null,extract(log){
+    const d=log.data||{};
+    return[{group:d.machine||"—",label:"Running After Maintenance",bad:d.status==="Not-Run"}];
+  }},
+  "Pest Control":{groupLabel:"Check Type",namesLabel:null,extract(log){
+    const d=log.data||{};const grp=log.mode||"—";const out=[];
+    if(log.mode==="Internal Check"){
+      if(d.cockroach!==undefined) out.push({group:grp,label:"Cockroach Sighting",bad:!!d.cockroach&&d.cockroach!=="None"});
+      if(d.rodent!==undefined) out.push({group:grp,label:"Rodent Signs",bad:!!d.rodent&&d.rodent!=="None"});
+      if(d.flies!==undefined) out.push({group:grp,label:"Flies / Insects",bad:d.flies==="Many"});
+      if(d.bait!==undefined) out.push({group:grp,label:"Bait Stations OK",bad:d.bait==="No"});
+      if(d.traps!==undefined) out.push({group:grp,label:"Traps OK",bad:d.traps==="No"});
+    } else if(d.issues_rf&&d.issues_rf.length){
+      out.push({group:grp,label:"Vendor Issues Raised",bad:true});
+    }
+    return out;
+  }},
+  "Metal Detector Calibration":{groupLabel:"Machine",namesLabel:null,extract(log){
+    const d=log.data||{};const grp=d.machine_id||"—";const out=[];
+    if(d.ferrous!==undefined) out.push({group:grp,label:"Ferrous Test",bad:d.ferrous==="Fail"});
+    if(d.non_ferrous!==undefined) out.push({group:grp,label:"Non-Ferrous Test",bad:d.non_ferrous==="Fail"});
+    if(d.stainless!==undefined) out.push({group:grp,label:"Stainless Test",bad:d.stainless==="Fail"});
+    if(d.reject_ok!==undefined) out.push({group:grp,label:"Auto-Reject Working",bad:d.reject_ok==="No"});
+    if(d.status!==undefined) out.push({group:grp,label:"Overall Status",bad:!!d.status&&d.status!=="Calibrated"});
+    return out;
+  }},
+  "Delivery Checklist":{groupLabel:"Route",namesLabel:null,extract(log){
+    const d=log.data||{};const grp=d.route||"—";const out=[];
+    if(d.pkg_intact!==undefined) out.push({group:grp,label:"Packaging Intact",bad:d.pkg_intact==="No"});
+    if(d.qty_match!==undefined) out.push({group:grp,label:"Quantity Match",bad:!!d.qty_match&&d.qty_match!=="Yes"});
+    if(d.driver_uniform!==undefined) out.push({group:grp,label:"Driver Uniform",bad:d.driver_uniform==="No"});
+    if(d.client_sign!==undefined) out.push({group:grp,label:"Client Signature",bad:d.client_sign==="Not Received"});
+    if(d.veh_clean!==undefined&&d.veh_clean!=="") out.push({group:grp,label:"Vehicle Cleanliness",bad:parseFloat(d.veh_clean)<=2});
+    return out;
+  }},
+  "Visitor Log":{groupLabel:"Visitor",namesLabel:null,extract(log){
+    const out=[];
+    (log.entries||[]).forEach((e,i)=>{
+      if(e&&e.hygiene_brief!==undefined) out.push({group:"Visitor "+(i+1),label:"Hygiene Briefing Given",bad:e.hygiene_brief==="No"});
+    });
+    return out;
+  }},
+  "Equipment Service Record":{groupLabel:"Equipment",namesLabel:null,extract(log){
+    const d=log.data||{};
+    return[{group:d.equipment||"—",label:"Operational",bad:d.eq_status==="Out of Service"}];
+  }},
+  "Training Log":{groupLabel:"Topic",namesLabel:null,extract(log){
+    const d=log.data||{};const out=[];
+    if(d.score!==undefined&&d.score!=="") out.push({group:d.topic||"—",label:"Training Score",bad:parseFloat(d.score)<=2});
+    return out;
+  }},
+};
+
+function computeFormReport(formName,range){
+  const cfg=FORM_REPORT_CONFIG[formName];
+  if(!cfg) return null;
+  const raw=getFilteredLogs(formName,range);
+  const seen=new Set();
+  const logs=raw.filter(l=>{if(seen.has(l.id))return false;seen.add(l.id);return true;});
+  const dupCount=raw.length-logs.length;
+  const dayMap={},groupMap={},issueMap={},names={},instances=[];
+  let totalChecks=0,totalIssues=0;
+  logs.forEach(log=>{
+    const d=new Date(log.timestamp);
+    const iso=d.toISOString().slice(0,10);
+    const label=d.toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+    const timeLabel=d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+    if(!dayMap[iso]) dayMap[iso]={label,checks:0,issues:0};
+    let items=[];
+    try{items=cfg.extract(log)||[];}catch(e){items=[];}
+    items.forEach(it=>{
+      const g=it.group||"—";
+      totalChecks++;dayMap[iso].checks++;
+      if(!groupMap[g]) groupMap[g]={checks:0,issues:0};
+      groupMap[g].checks++;
+      if(it.bad){
+        totalIssues++;dayMap[iso].issues++;groupMap[g].issues++;
+        issueMap[it.label]=(issueMap[it.label]||0)+1;
+        instances.push({iso,dateLabel:label,timeLabel,group:g,label:it.label,names:it.names||null});
+        if(it.names){
+          it.names.forEach(n=>{
+            if(!names[n]) names[n]={count:0,groups:new Set()};
+            names[n].count++;names[n].groups.add(g);
+          });
+        }
+      }
+    });
+  });
+  const days=Object.keys(dayMap).sort().map(k=>dayMap[k]);
+  const groups=Object.entries(groupMap).map(([g,v])=>({group:g,...v})).sort((a,b)=>b.checks-a.checks);
+  const issues=Object.entries(issueMap).map(([label,count])=>({label,count})).sort((a,b)=>b.count-a.count);
+  const namesList=Object.entries(names).map(([name,v])=>({name,count:v.count,groups:[...v.groups]})).sort((a,b)=>b.count-a.count);
+  instances.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  return{sessions:logs.length,totalChecks,totalIssues,dupCount,
+    compliance:totalChecks?((totalChecks-totalIssues)/totalChecks*100):100,
+    days,groups,issues,namesList,instances};
+}
+
+// ── Attendance (staff & machine) — separate data model, same report shape ──
+const ATTENDANCE_REPORT_TYPES={
+  "Staff Attendance":{type:"staff",groupLabel:"Employee",namesLabel:"Frequent Absentees / Late Arrivals",icon:"🧑‍🤝‍🧑",color:"#38A8E8"},
+  "Machine Attendance":{type:"machine",groupLabel:"Machine",namesLabel:"Frequently Off Machines",icon:"⚙",color:"#F0A500"},
+};
+
+function dateKeyFromDate(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+
+function attendanceDateHasData(date,type){
+  const records=FB_ATTENDANCE[date]?.[type]||((type==="staff"&&FB_ATTENDANCE[date])||{});
+  const local=getLocalAttendance(date);
+  const hasCloud=records&&typeof records==="object"&&Object.values(records).some(r=>r&&r.status);
+  const hasLocal=Object.keys(local).some(k=>k.startsWith(type+"_")&&local[k]&&local[k].status);
+  return hasCloud||hasLocal;
+}
+
+function computeAttendanceReport(type,range){
+  const now=new Date();
+  const bounds=getReportRangeBounds(range,now);
+  let fromKey,toKey;
+  if(bounds){
+    fromKey=dateKeyFromDate(bounds.start);
+    toKey=dateKeyFromDate(new Date(bounds.end.getTime()-1));
+  }else{
+    const keys=Object.keys(FB_ATTENDANCE).sort();
+    fromKey=keys.length?keys[0]:todayKey();
+    toKey=todayKey();
+  }
+  // Only count days someone actually opened Attendance and marked something —
+  // days before the feature was ever used shouldn't drag everyone's numbers down.
+  const rows=[];
+  if(fromKey<=toKey){
+    const cursor=new Date(fromKey+"T00:00:00");
+    const end=new Date(toKey+"T00:00:00");
+    while(cursor<=end){
+      const dateKey=cursor.getFullYear()+"-"+pad(cursor.getMonth()+1)+"-"+pad(cursor.getDate());
+      if(attendanceDateHasData(dateKey,type)){
+        attendanceReportRows(dateKey,type).forEach(row=>rows.push({...row,date:dateKey}));
+      }
+      cursor.setDate(cursor.getDate()+1);
+    }
+  }
+  const dayMap={},groupMap={},issueMap={},names={},instances=[];
+  let totalChecks=0,totalIssues=0,presentDays=0,absentDays=0,lateDays=0;
+  const absentLabel=type==="machine"?"Machine Off":"Absent";
+  rows.forEach(row=>{
+    const d=new Date(row.date+"T00:00:00");
+    const dayLabel=d.toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+    if(!dayMap[row.date]) dayMap[row.date]={label:dayLabel,checks:0,issues:0};
+    const g=row.name||"—";
+    if(!groupMap[g]) groupMap[g]={checks:0,issues:0};
+    totalChecks++;dayMap[row.date].checks++;groupMap[g].checks++;
+    let issueLabel=null;
+    if(row.status===(type==="machine"?"off":"absent")){issueLabel=absentLabel;absentDays++;}
+    else if(row.status==="unmarked") issueLabel="Not Marked";
+    else if(attendanceIsLate(row)){issueLabel="Late Arrival";lateDays++;}
+    else presentDays++;
+    if(issueLabel){
+      totalIssues++;dayMap[row.date].issues++;groupMap[g].issues++;
+      issueMap[issueLabel]=(issueMap[issueLabel]||0)+1;
+      instances.push({iso:row.date,dateLabel:dayLabel,timeLabel:row.actualTime||"",group:g,label:issueLabel,names:null});
+      if(!names[g]) names[g]={count:0,groups:new Set([g])};
+      names[g].count++;
+    }
+  });
+  const days=Object.keys(dayMap).sort().map(k=>dayMap[k]);
+  const groups=Object.entries(groupMap).map(([g,v])=>({group:g,...v})).sort((a,b)=>b.checks-a.checks);
+  const issues=Object.entries(issueMap).map(([label,count])=>({label,count})).sort((a,b)=>b.count-a.count);
+  const namesList=Object.entries(names).map(([name,v])=>({name,count:v.count,groups:[...v.groups]})).sort((a,b)=>b.count-a.count);
+  instances.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+  return{sessions:rows.length,totalChecks,totalIssues,dupCount:0,presentDays,absentDays,lateDays,
+    compliance:totalChecks?((totalChecks-totalIssues)/totalChecks*100):100,
+    days,groups,issues,namesList,instances};
+}
+
+// Dispatches to the right compute function and gives a uniform cfg/meta lookup
+// so the Hub, the per-form screen and the downloadable report can all stay generic.
+function computeAnyReport(fn,range){
+  const at=ATTENDANCE_REPORT_TYPES[fn];
+  if(at) return computeAttendanceReport(at.type,range);
+  return computeFormReport(fn,range);
+}
+function getReportCfg(fn){
+  return ATTENDANCE_REPORT_TYPES[fn]||FORM_REPORT_CONFIG[fn]||{groupLabel:"Group",namesLabel:null};
+}
+function getReportMeta(fn){
+  const at=ATTENDANCE_REPORT_TYPES[fn];
+  if(at) return{icon:at.icon,color:at.color};
+  return getFormsMeta()[fn]||{icon:"◉",color:C.amber};
+}
+function getReportableNames(){
+  return[...Object.keys(getFormsMeta()).filter(fn=>FORM_REPORT_CONFIG[fn]),...Object.keys(ATTENDANCE_REPORT_TYPES)];
+}
+
+const RANGE_LABEL={today:"Today",week:"This Week",month:"This Month",all:"All Time"};
+
+function escHtml(s){
+  return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function buildReportHTML(formName,data,range){
+  const cfg=getReportCfg(formName);
+  const gl=cfg.groupLabel;
+  const today=new Date();
+  const compiled=today.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+  const periodLabel=RANGE_LABEL[range]||"This Week";
+  const flow=[
+    {n:"01",label:formName+" Submission",desc:"Staff logs a "+formName+" entry per "+gl.toLowerCase()+" in the RF Forms app."},
+    {n:"02",label:"Checklist Applied",desc:"Every entry is scored against the standard checklist for this form."},
+    {n:"03",label:"Auto Pass / Flag",desc:"Each answer is marked OK or Needs Correction against spec."},
+    {n:"04",label:"This Report",desc:"Flags are rolled up here for follow-up and sign-off."}
+  ];
+  const compliance=data.compliance;
+  const passed=data.totalChecks-data.totalIssues;
+  const atCfg=ATTENDANCE_REPORT_TYPES[formName];
+  const isAttendanceDl=!!atCfg;
+  const isMachineDl=isAttendanceDl&&atCfg.type==="machine";
+
+  const trendLabels=data.days.map(d=>d.label);
+  const trendData=data.days.map(d=>d.checks?+((d.checks-d.issues)/d.checks*100).toFixed(1):100);
+  const groupLabels=data.groups.map(g=>g.group);
+  const groupData=data.groups.map(g=>g.checks?+((g.checks-g.issues)/g.checks*100).toFixed(1):100);
+
+  const maxIssue=data.issues.length?data.issues[0].count:1;
+  const issueRows=data.issues.map(i=>`
+    <div class="issue-row">
+      <div class="issue-name">${escHtml(i.label)}</div>
+      <div class="issue-bar-track"><div class="issue-bar-fill" style="width:${Math.round(i.count/maxIssue*100)}%"></div></div>
+      <div class="issue-count">${i.count}</div>
+    </div>`).join("");
+
+  const flagged=data.groups.filter(g=>g.checks&&((g.checks-g.issues)/g.checks*100)<97)
+    .sort((a,b)=>((a.checks-a.issues)/a.checks)-((b.checks-b.issues)/b.checks));
+
+  const watchCards=flagged.map(g=>{
+    const rate=((g.checks-g.issues)/g.checks*100).toFixed(1);
+    const rows=data.instances.filter(ins=>ins.group===g.group).slice(-6).map(ins=>`
+      <tr><td>${escHtml(ins.dateLabel)}</td><td>${escHtml(ins.timeLabel)}</td><td>${escHtml(ins.label)}${ins.names&&ins.names.length?" — "+escHtml(ins.names.join(", ")):""}</td></tr>`).join("");
+    return `
+    <div class="watch-card flag">
+      <h4>${escHtml(g.group)}</h4>
+      <div class="wc-rate">${rate}% good days</div>
+      ${rows?`<table class="names"><tr><th>Date</th><th>Time</th><th>Flagged</th></tr>${rows}</table>`:""}
+    </div>`;
+  }).join("");
+
+  const repeats=data.namesList.filter(n=>n.count>1);
+
+  const actions=[];
+  flagged.slice(0,2).forEach(g=>{
+    actions.push(`<li><b>Re-brief ${escHtml(g.group)}</b>Good days are below 97% this ${periodLabel.toLowerCase()} — a quick refresher on the checklist should close most of the gap.</li>`);
+  });
+  if(repeats.length){
+    actions.push(`<li><b>Check in on repeat names</b>${escHtml(repeats.map(r=>r.name).join(", "))} were each flagged more than once — worth a direct word before it becomes a pattern.</li>`);
+  }
+  if(data.dupCount>0){
+    actions.push(`<li><b>Check the export/sync</b>${data.dupCount} duplicate row(s) were found and removed before these numbers were calculated — worth a look at the sync logic.</li>`);
+  }
+  const ok=data.groups.filter(g=>g.checks&&((g.checks-g.issues)/g.checks*100)>=97).map(g=>g.group);
+  if(ok.length){
+    actions.push(`<li><b>Hold steady elsewhere</b>${escHtml(ok.join(", "))} ${ok.length>1?"are":"is"} at or above 97% — no action needed, just keep the current routine.</li>`);
+  }
+  if(!actions.length){
+    actions.push(`<li><b>No corrective action needed</b>Everything logged this ${periodLabel.toLowerCase()} is within spec.</li>`);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RF Forms — ${escHtml(formName)} Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"><\/script>
+<style>
+  :root{--ink:#20242A;--steel:#1E2328;--steel-2:#2A3138;--paper:#EEF1F0;--panel:#FFFFFF;--line:#DADFDD;
+    --amber:#E29A3C;--amber-deep:#B9762A;--green:#3F7D58;--green-soft:#E4EFE8;--rust:#B5482A;--rust-soft:#F7E7E1;--muted:#6B7378;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,.num,.tag{font-family:'Barlow Condensed',sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px 60px;}
+  .hero{background:linear-gradient(160deg,var(--steel) 0%,var(--steel-2) 100%);color:#F2F3F1;padding:44px 28px 40px;margin-bottom:28px;}
+  .hero-inner{max-width:1080px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;}
+  .hero .eyebrow{color:var(--amber);font-size:14px;letter-spacing:.04em;font-weight:600;margin:0 0 6px;font-family:'Inter',sans-serif;}
+  .hero h1{font-size:44px;line-height:1.05;margin:0 0 8px;font-weight:600;}
+  .hero .period{color:#B7BEC2;font-size:16px;margin:0;}
+  .hero-metric{text-align:right;}
+  .hero-metric .num{font-size:72px;line-height:1;font-weight:700;color:#fff;}
+  .hero-metric .cap{color:#B7BEC2;font-size:14px;margin-top:4px;font-family:'Inter',sans-serif;}
+  .flow{display:flex;align-items:stretch;gap:0;margin-bottom:32px;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .flow-step{flex:1;padding:18px 20px;position:relative;border-right:1px solid var(--line);}
+  .flow-step:last-child{border-right:none;}
+  .flow-step .fnum{font-family:'Barlow Condensed',sans-serif;font-size:13px;color:var(--amber-deep);font-weight:700;letter-spacing:.03em;}
+  .flow-step .flabel{font-size:15px;font-weight:600;margin:2px 0 2px;}
+  .flow-step .fdesc{font-size:12.5px;color:var(--muted);line-height:1.4;}
+  .flow-step:not(:last-child)::after{content:"";position:absolute;right:-9px;top:50%;transform:translateY(-50%) rotate(45deg);
+    width:14px;height:14px;background:var(--panel);border-right:1px solid var(--line);border-top:1px solid var(--line);z-index:2;}
+  .section-title{font-size:22px;font-weight:600;margin:0 0 4px;}
+  .section-sub{color:var(--muted);font-size:13.5px;margin:0 0 16px;}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:36px;}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 18px 16px;border-top:3px solid var(--steel);}
+  .kpi.accent{border-top-color:var(--amber);}
+  .kpi.good{border-top-color:var(--green);}
+  .kpi .klabel{font-size:12.5px;color:var(--muted);font-weight:500;}
+  .kpi .kval{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;margin:4px 0 2px;}
+  .kpi .ksub{font-size:12px;color:var(--muted);}
+  .grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;margin-bottom:36px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px 22px;}
+  .card h3{font-size:17px;font-weight:600;margin:0 0 2px;}
+  .card .chsub{font-size:12.5px;color:var(--muted);margin:0 0 14px;}
+  .issue-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);}
+  .issue-row:last-child{border-bottom:none;}
+  .issue-name{width:150px;font-weight:600;font-size:14px;flex-shrink:0;}
+  .issue-bar-track{flex:1;background:#EDEFEE;border-radius:3px;height:10px;overflow:hidden;}
+  .issue-bar-fill{height:100%;background:var(--rust);border-radius:3px;}
+  .issue-count{width:34px;text-align:right;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;color:var(--rust);}
+  .watch-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:36px;}
+  .watch-card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px 22px;}
+  .watch-card.flag{border-left:4px solid var(--rust);}
+  .watch-card h4{margin:0 0 2px;font-size:18px;font-weight:600;}
+  .watch-card .wc-rate{font-family:'Barlow Condensed',sans-serif;font-size:15px;color:var(--rust);font-weight:700;margin-bottom:10px;}
+  table.names{width:100%;border-collapse:collapse;font-size:13px;}
+  table.names th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;padding-bottom:6px;border-bottom:1px solid var(--line);}
+  table.names td{padding:6px 0;border-bottom:1px solid #F0F1F0;}
+  .note{background:#FBF3E5;border:1px solid #EAD5A8;border-radius:6px;padding:16px 20px;margin-bottom:36px;display:flex;gap:14px;}
+  .note .nicon{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:20px;color:var(--amber-deep);flex-shrink:0;}
+  .note p{margin:0;font-size:13.5px;line-height:1.55;color:#4A3F2C;}
+  .actions{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:40px;}
+  .actions li{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:4px;padding:13px 16px;font-size:13.5px;line-height:1.5;}
+  .actions li b{display:block;font-size:14px;margin-bottom:2px;}
+  footer{border-top:1px solid var(--line);padding-top:18px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);flex-wrap:wrap;gap:6px;}
+  @media (max-width:720px){
+    .kpis{grid-template-columns:1fr 1fr;}
+    .grid-2, .watch-grid, .actions{grid-template-columns:1fr;}
+    .flow{flex-direction:column;}
+    .flow-step:not(:last-child)::after{display:none;}
+    .flow-step{border-right:none;border-bottom:1px solid var(--line);}
+    .hero-inner{flex-direction:column;align-items:flex-start;}
+    .hero-metric{text-align:left;}
+  }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="hero-inner">
+    <div>
+      <p class="eyebrow">RF FORMS · ${escHtml(formName.toUpperCase())}</p>
+      <h1>${escHtml(formName)} Report</h1>
+      <p class="period">${escHtml(periodLabel)} &nbsp;·&nbsp; ${data.groups.length} ${escHtml(gl.toLowerCase())}${data.groups.length===1?"":"s"} &nbsp;·&nbsp; ${data.sessions} submission${data.sessions===1?"":"s"}</p>
+    </div>
+    <div class="hero-metric">
+      <div class="num">${compliance.toFixed(1)}%</div>
+      <div class="cap">good days overall</div>
+    </div>
+  </div>
+</div>
+<div class="wrap">
+  <div class="flow">
+    ${flow.map(f=>`<div class="flow-step"><div class="fnum">${f.n}</div><div class="flabel">${escHtml(f.label)}</div><div class="fdesc">${escHtml(f.desc)}</div></div>`).join("")}
+  </div>
+  <div class="kpis">
+    ${isAttendanceDl?`
+    <div class="kpi"><div class="klabel">Days checked</div><div class="kval">${data.totalChecks}</div><div class="ksub">${periodLabel}</div></div>
+    <div class="kpi good"><div class="klabel">${isMachineDl?"On days":"Present days"}</div><div class="kval">${data.presentDays}</div><div class="ksub">on time, no issue</div></div>
+    <div class="kpi"><div class="klabel">${isMachineDl?"Off days":"Absent days"}</div><div class="kval">${data.absentDays}</div><div class="ksub">not there</div></div>
+    <div class="kpi accent"><div class="klabel">Late days</div><div class="kval">${data.lateDays}</div><div class="ksub">present, came late</div></div>`:`
+    <div class="kpi"><div class="klabel">Submissions logged</div><div class="kval">${data.sessions}</div><div class="ksub">${periodLabel}</div></div>
+    <div class="kpi"><div class="klabel">Checks recorded</div><div class="kval">${data.totalChecks}</div><div class="ksub">across ${data.groups.length} ${escHtml(gl.toLowerCase())}${data.groups.length===1?"":"s"}</div></div>
+    <div class="kpi good"><div class="klabel">Passed clean</div><div class="kval">${passed}</div><div class="ksub">${data.totalChecks?((passed/data.totalChecks)*100).toFixed(1):"0.0"}% first-time OK</div></div>
+    <div class="kpi accent"><div class="klabel">Needs correction</div><div class="kval">${data.totalIssues}</div><div class="ksub">flagged for follow-up</div></div>`}
+  </div>
+  ${data.days.length>1?`<div class="grid-2">
+    <div class="card"><h3>Good Days Trend</h3><p class="chsub">How many days went well, day by day</p><canvas id="trendChart" height="200"></canvas></div>
+    <div class="card"><h3>Good Days by ${escHtml(gl)}</h3><p class="chsub">How many days went well, per ${escHtml(gl.toLowerCase())}</p><canvas id="groupChart" height="200"></canvas></div>
+  </div>`:`<div class="card" style="margin-bottom:36px;"><h3>Good Days by ${escHtml(gl)}</h3><p class="chsub">How many days went well, per ${escHtml(gl.toLowerCase())}</p><canvas id="groupChart" height="200"></canvas></div>`}
+  ${data.issues.length?`<div class="card" style="margin-bottom:36px;">
+    <h3>Where the flags came from</h3><p class="chsub">${data.totalIssues} correction(s), by check type</p>
+    ${issueRows}
+  </div>`:""}
+  ${flagged.length?`<p class="section-title">${escHtml(gl)}s needing attention</p>
+  <p class="section-sub">Below the 97% floor this ${escHtml(periodLabel.toLowerCase())}</p>
+  <div class="watch-grid">${watchCards}</div>`:""}
+  ${data.dupCount>0?`<div class="note"><div class="nicon">i</div><p><strong>Data note:</strong> ${data.dupCount} duplicate row(s) were found in the raw data and removed before these numbers were calculated — worth a look at the export/sync logic.</p></div>`:""}
+  <p class="section-title">Recommended follow-up</p>
+  <ul class="actions">${actions.join("")}</ul>
+  <footer>
+    <span>Source: RF Forms — ${escHtml(formName)} (${data.sessions} submissions, ${data.totalChecks} checks)</span>
+    <span>Compiled ${compiled}</span>
+  </footer>
+</div>
+<script>
+${data.days.length>1?`
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels: ${JSON.stringify(trendLabels)},
+      datasets: [{ data: ${JSON.stringify(trendData)}, borderColor: '#1E2328', backgroundColor: 'rgba(30,35,40,0.06)',
+        pointBackgroundColor: (ctx) => ctx.raw < 97 ? '#B5482A' : '#3F7D58', pointRadius: 5, pointHoverRadius: 6, borderWidth: 2.5, fill: true, tension: 0.35 }] },
+    options: { responsive: true, plugins: { legend: { display: false } },
+      scales: { y: { min: 70, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#EDEFEE' } }, x: { grid: { display: false } } } }
+  });`:""}
+  new Chart(document.getElementById('groupChart'), {
+    type: 'bar',
+    data: { labels: ${JSON.stringify(groupLabels)},
+      datasets: [{ data: ${JSON.stringify(groupData)}, backgroundColor: ${JSON.stringify(groupData.map(r=>r>=97?"#3F7D58":"#B5482A"))}, borderRadius: 3, maxBarThickness: 34 }] },
+    options: { responsive: true, plugins: { legend: { display: false } },
+      scales: { y: { min: 70, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#EDEFEE' } }, x: { grid: { display: false } } } }
+  });
+<\/script>
+</body>
+</html>`;
+}
+
+function triggerDownloadHTML(filename,htmlString){
+  const blob=new Blob([htmlString],{type:"text/html"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+function renderReportHub(){
+  if(!S.user.isAdmin){
+    S.screen="reports";
+    return renderReports();
+  }
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr("📈 Daily Report Card","All forms, one view",null,()=>ss({screen:"reports"}),"← Back"));
+  const bdy=wrap();
+  bdy.appendChild(div({fontSize:"12.5px",color:C.muted,marginBottom:"16px",lineHeight:"1.5"},
+    "Tap a form to see how many days went well, where the problems are, and who keeps getting flagged — same checks the app already uses."));
+  getReportableNames().forEach(fn=>{
+    const meta=getReportMeta(fn);
+    const data=computeAnyReport(fn,"week");
+    const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",
+      padding:"14px 16px",marginBottom:"10px",display:"flex",alignItems:"center",gap:"12px",cursor:"pointer"});
+    card.appendChild(div({width:"40px",height:"40px",background:meta.color+"22",
+      border:"1.5px solid "+meta.color+"55",borderRadius:"10px",display:"flex",
+      alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:"0"},meta.icon||"◉"));
+    const mid=div({flex:"1"});
+    mid.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},fn));
+    mid.appendChild(div({fontSize:"12px",color:C.muted},data&&data.sessions?data.sessions+" this week":"No data this week"));
+    card.appendChild(mid);
+    if(data&&data.totalChecks){
+      const pctCol=data.compliance>=97?C.green:data.compliance>=94?C.amber:C.red;
+      card.appendChild(div({fontSize:"20px",fontWeight:"800",color:pctCol,fontFamily:"'DM Mono',monospace"},
+        data.compliance.toFixed(0)+"%"));
+    }
+    card.addEventListener("click",()=>ss({screen:"formReport",reportFormName:fn,qcReportRange:"week"}));
+    bdy.appendChild(card);
+  });
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+function renderFormReport(){
+  if(!S.user.isAdmin){
+    S.screen="reports";
+    return renderReports();
+  }
+  const fn=S.reportFormName||"QC Form";
+  const meta=getReportMeta(fn);
+  const cfg=getReportCfg(fn);
+  const range=S.qcReportRange||"week";
+  const data=computeAnyReport(fn,range);
+  const w=div({minHeight:"100vh",background:C.bg});
+  const hdrBtns=(data&&data.sessions)?[btn({background:C.green,border:"none",borderRadius:"8px",color:"#000",
+      padding:"7px 12px",fontSize:"13px",fontWeight:"800"},"⬇ Download Report",
+      ()=>triggerDownloadHTML("RF_Forms_"+fn.replace(/\s+/g,"_")+"_"+range+"_"+new Date().toISOString().slice(0,10)+".html",
+        buildReportHTML(fn,data,range)))]:null;
+  w.appendChild(makeHdr(meta.icon+" "+fn,"Daily Report",hdrBtns,
+    ()=>ss({screen:"reportHub"}),"← Back"));
+  const bdy=wrap();
+
+  const rr=div({display:"flex",gap:"7px",marginBottom:"20px",flexWrap:"wrap"});
+  [{v:"today",l:"Today"},{v:"week",l:"This Week"},{v:"month",l:"This Month"},{v:"all",l:"All Time"}].forEach(r=>{
+    const sel=range===r.v;
+    rr.appendChild(btn({padding:"9px 16px",border:"2px solid "+(sel?meta.color:C.border),
+      borderRadius:"10px",background:sel?meta.color+"22":C.surface,
+      color:sel?meta.color:C.muted,fontWeight:"700",fontSize:"14px"},
+      r.l,()=>ss({qcReportRange:r.v})));
+  });
+  bdy.appendChild(rr);
+
+  if(!data||!data.sessions){
+    bdy.appendChild(div({textAlign:"center",color:C.muted,padding:"50px 0",fontSize:"14px"},
+      "No "+fn+" submissions in this range"));
+    bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+  }
+
+  // Hero
+  const hero=div({background:"linear-gradient(150deg,#1e1b18,"+C.bg+")",
+    border:"1px solid "+C.border,borderRadius:"16px",padding:"22px 20px",marginBottom:"18px"});
+  hero.appendChild(div({fontSize:"11px",fontWeight:"800",color:meta.color,letterSpacing:"0.08em",
+    textTransform:"uppercase",marginBottom:"6px"},"Overall Good Days"));
+  const pct=data.compliance;
+  const pctCol=pct>=97?C.green:pct>=94?C.amber:C.red;
+  hero.appendChild(div({fontSize:"52px",fontWeight:"800",color:pctCol,lineHeight:"1",
+    fontFamily:"'DM Mono',monospace"},pct.toFixed(1)+"%"));
+  hero.appendChild(div({fontSize:"13px",color:C.muted,marginTop:"6px"},
+    data.sessions+" submission(s) · "+data.totalChecks+" checks · "+data.totalIssues+" flagged"));
+  bdy.appendChild(hero);
+
+  // KPI grid
+  const kpis=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"20px"});
+  const isAttendance=!!ATTENDANCE_REPORT_TYPES[fn];
+  const isMachine=isAttendance&&ATTENDANCE_REPORT_TYPES[fn].type==="machine";
+  const kpiList=isAttendance?[
+    {l:"Days Checked",v:data.totalChecks,c:C.blue},
+    {l:isMachine?"On Days":"Present Days",v:data.presentDays,c:C.green},
+    {l:isMachine?"Off Days":"Absent Days",v:data.absentDays,c:C.red},
+    {l:"Late Days",v:data.lateDays,c:C.amber},
+  ]:[
+    {l:"Submissions",v:data.sessions,c:C.blue},{l:"Checks Done",v:data.totalChecks,c:meta.color},
+    {l:"Passed Clean",v:data.totalChecks-data.totalIssues,c:C.green},
+    {l:"Needs Correction",v:data.totalIssues,c:C.red},
+  ];
+  kpiList.forEach(s=>{
+    const c=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"12px"});
+    c.appendChild(div({fontSize:"24px",fontWeight:"800",color:s.c,fontFamily:"'DM Mono',monospace",lineHeight:"1"},String(s.v)));
+    c.appendChild(div({fontSize:"11px",color:C.muted,marginTop:"4px"},s.l));
+    kpis.appendChild(c);
+  });
+  bdy.appendChild(kpis);
+
+  // Trend chart
+  if(data.days.length>1){
+    bdy.appendChild(secHdr("Good Days Trend",meta.color,"◉"));
+    const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginBottom:"20px"});
+    const cv=el("canvas",{maxHeight:"200px"});card.appendChild(cv);bdy.appendChild(card);
+    setTimeout(()=>{
+      const rates=data.days.map(d=>d.checks?((d.checks-d.issues)/d.checks*100):100);
+      new Chart(cv.getContext("2d"),{type:"line",data:{
+        labels:data.days.map(d=>d.label),
+        datasets:[{data:rates,borderColor:meta.color,backgroundColor:meta.color+"22",fill:true,tension:0.35,
+          pointBackgroundColor:(c)=>rates[c.dataIndex]<97?C.red:C.green,
+          pointRadius:5,borderWidth:2.5}]},
+        options:{responsive:true,plugins:{legend:{display:false}},
+          scales:{y:{min:70,max:100,ticks:{color:C.muted,callback:v=>v+"%"},grid:{color:C.border}},
+            x:{ticks:{color:C.muted},grid:{display:false}}}}});
+    },0);
+  }
+
+  // Group-wise chart
+  if(data.groups.length>1){
+    bdy.appendChild(secHdr("Good Days by "+cfg.groupLabel,C.blue,"▣"));
+    const lcard=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginBottom:"20px"});
+    const lcv=el("canvas",{maxHeight:"200px"});lcard.appendChild(lcv);bdy.appendChild(lcard);
+    setTimeout(()=>{
+      const rates=data.groups.map(l=>l.checks?((l.checks-l.issues)/l.checks*100):100);
+      new Chart(lcv.getContext("2d"),{type:"bar",data:{
+        labels:data.groups.map(l=>l.group.length>10?l.group.slice(0,10)+"…":l.group),
+        datasets:[{data:rates,backgroundColor:rates.map(r=>r>=97?C.green:C.red),borderRadius:4,maxBarThickness:34}]},
+        options:{responsive:true,plugins:{legend:{display:false}},
+          scales:{y:{min:70,max:100,ticks:{color:C.muted,callback:v=>v+"%"},grid:{color:C.border}},
+            x:{ticks:{color:C.muted},grid:{display:false}}}}});
+    },0);
+  }
+
+  // Issue breakdown
+  if(data.issues.length){
+    bdy.appendChild(secHdr("Where The Flags Came From",C.red,"⚠"));
+    const icard=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginBottom:"20px"});
+    const maxC=data.issues[0].count;
+    data.issues.forEach((i,idx)=>{
+      const row=div({display:"flex",alignItems:"center",gap:"10px",padding:"7px 0",
+        borderBottom:idx<data.issues.length-1?"1px solid "+C.border:"none"});
+      row.appendChild(div({width:"110px",fontSize:"12.5px",fontWeight:"700",color:C.text,flexShrink:"0"},i.label));
+      const track=div({flex:"1",height:"8px",background:"rgba(255,255,255,0.06)",borderRadius:"4px",overflow:"hidden"});
+      track.appendChild(div({height:"100%",width:(i.count/maxC*100)+"%",background:C.red,borderRadius:"4px"}));
+      row.appendChild(track);
+      row.appendChild(div({width:"24px",textAlign:"right",fontSize:"14px",fontWeight:"800",color:C.red,fontFamily:"'DM Mono',monospace"},String(i.count)));
+      icard.appendChild(row);
+    });
+    bdy.appendChild(icard);
+  }
+
+  // Groups needing attention
+  const flagged=data.groups.filter(l=>l.checks&&((l.checks-l.issues)/l.checks*100)<97);
+  if(flagged.length){
+    bdy.appendChild(secHdr(cfg.groupLabel+"s Needing Attention",C.red,"⚠"));
+    flagged.forEach(l=>{
+      const rate=((l.checks-l.issues)/l.checks*100).toFixed(1);
+      const card=div({background:C.surface,border:"1px solid "+C.red+"44",borderLeft:"3px solid "+C.red,
+        borderRadius:"10px",padding:"12px 14px",marginBottom:"10px"});
+      card.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text},l.group));
+      card.appendChild(div({fontSize:"12.5px",color:C.red,fontWeight:"700",marginTop:"2px"},rate+"% good days"));
+      bdy.appendChild(card);
+    });
+  }
+
+  // Repeat names
+  if(cfg.namesLabel&&data.namesList.length){
+    bdy.appendChild(secHdr(cfg.namesLabel,C.purple,"◈"));
+    const ncard=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"6px 14px",marginBottom:"10px"});
+    data.namesList.forEach((n,i)=>{
+      const row=div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",
+        borderBottom:i<data.namesList.length-1?"1px solid "+C.border:"none"});
+      row.appendChild(span({fontSize:"13.5px",fontWeight:"700",color:C.text},n.name));
+      const right=div({display:"flex",alignItems:"center",gap:"8px"});
+      right.appendChild(span({fontSize:"11px",color:C.muted},n.groups.join(", ")));
+      right.appendChild(span({fontSize:"12px",fontWeight:"800",color:n.count>1?C.red:C.muted,
+        background:(n.count>1?C.red:C.muted)+"18",padding:"2px 8px",borderRadius:"10px"},String(n.count)+"×"));
+      row.appendChild(right);
+      ncard.appendChild(row);
+    });
+    bdy.appendChild(ncard);
+    const repeats=data.namesList.filter(n=>n.count>1);
+    if(repeats.length){
+      bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"20px"},
+        repeats.map(r=>r.name).join(", ")+" flagged more than once — worth a direct word."));
+    }
+  }
+
+  bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
+}
+
+
 function sendDailyReport(){
   const today=new Date();
   const ds=today.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
@@ -2988,6 +3689,8 @@ function render(){
       case "attendance": screen=renderAttendance(); break;
       case "admin":    screen=renderAdmin(); break;
       case "reports":  screen=renderReports(); break;
+      case "reportHub": screen=renderReportHub(); break;
+      case "formReport": screen=renderFormReport(); break;
       case "history":  screen=renderHistory(); break;
       case "viewer":   screen=renderViewer(); break;
       default:         screen=renderLogin();

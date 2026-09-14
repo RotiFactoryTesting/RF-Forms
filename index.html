@@ -747,9 +747,16 @@ function el(tag,style,children,attrs){
 }
 function div(s,c,a){return el("div",s,c,a);}
 function span(s,t){const e=el("span",s);if(t!=null)e.textContent=t;return e;}
+function waBtnLabel(text){
+  const label=span({display:"inline-flex",alignItems:"center",justifyContent:"center",gap:"7px"});
+  label.appendChild(span({display:"inline-flex",alignItems:"center",justifyContent:"center",width:"20px",height:"20px",borderRadius:"50%",background:"#25D366",color:"#fff",fontSize:"13px",fontWeight:"800",lineHeight:"1"},"☎"));
+  label.appendChild(span({},text));
+  return label;
+}
 function btn(s,t,fn){
   const b=el("button",s);
-  b.textContent=t;
+  if(typeof t==="string") b.textContent=t;
+  else b.appendChild(t);
   b.addEventListener("click",fn);
   return b;
 }
@@ -1256,12 +1263,12 @@ function renderAttendance(){
   appendAttendanceTable(bdy,date,true,S.attendanceType);
   const reportBox=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",padding:"14px",marginTop:"18px"});
   reportBox.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text,marginBottom:"6px"},"Today's "+(S.attendanceType==="machine"?"machine":"staff")+" attendance report"));
-  reportBox.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},"Download the attendance or send only absent names to the configured report number."));
+  reportBox.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},"Download the attendance or send the full report to the configured WhatsApp number."));
   reportBox.appendChild(btn({width:"100%",background:C.green+"18",border:"1px solid "+C.green+"55",borderRadius:"9px",color:C.green,fontWeight:"800",padding:"10px"},"Send today's attendance report",()=>ss({attendanceReportOpen:!S.attendanceReportOpen})));
   if(S.attendanceReportOpen){
     const actions=div({display:"flex",gap:"8px",marginTop:"8px"});
     actions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"10px 6px",fontSize:"12px"},"Download report",()=>downloadAttendanceReport(date,S.attendanceType)));
-    actions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},"Send absent names",()=>sendAttendanceReport(date,S.attendanceType)));
+    actions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},waBtnLabel("Send report on WhatsApp"),()=>sendAttendanceReport(date,S.attendanceType)));
     reportBox.appendChild(actions);
   }
   bdy.appendChild(reportBox);
@@ -1279,22 +1286,21 @@ function attendanceReportRows(date,type="staff"){
 function downloadAttendanceReport(date,type="staff"){
   const rows=attendanceReportRows(date,type);
   if(!rows.length){toast("No "+(type==="machine"?"machines":"attendance staff")+" configured");return;}
-  const csv=[(type==="machine"?"Machine":"Employee")+",Status,Expected Time,Actual Time",...rows.map(row=>[
-    row.name,row.status,row.expectedTime||"",row.actualTime||""
-  ].map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(","))].join("\n");
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-  a.download=(type==="machine"?"Machine":"Staff")+"_Attendance_"+date+".csv";a.click();
-  toast("✓ Attendance report downloaded");
+  downloadAttendanceHTML(rows,type,(type==="machine"?"Machine":"Staff")+" attendance report",date,(type==="machine"?"Machine":"Staff")+"_Attendance_"+date+".html");
 }
 
 function sendAttendanceReport(date,type="staff"){
   const phone=String(FB_ATTENDANCE_SETTINGS.reportPhone||"").replace(/[^0-9]/g,"");
   if(!phone){toast("Admin must set the attendance report number first");return;}
-  const absent=attendanceReportRows(date,type).filter(row=>row.status===(type==="machine"?"off":"absent"));
-  const names=absent.map(row=>row.name).filter(Boolean);
+  const rows=attendanceReportRows(date,type);
+  const absent=rows.filter(row=>row.status===(type==="machine"?"off":"absent"));
+  const late=rows.filter(row=>attendanceIsLate(row));
   const label=new Date(date+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
-  const msg="RF Factory "+(type==="machine"?"machine":"staff")+" attendance - "+label+"\n\n"+(names.length?(type==="machine"?"Off machines:\n":"Absent:\n")+names.map(name=>"- "+name).join("\n"):"No "+(type==="machine"?"machines off":"absent employees")+".");
+  const absentLabel=type==="machine"?"Off machines":"Absent staff";
+  const lateLabel=type==="machine"?"Late machines":"Late staff";
+  const msg="RF Factory "+(type==="machine"?"machine":"staff")+" attendance - "+label+"\n\n"+
+    absentLabel+":\n"+(absent.length?absent.map(row=>"- "+row.name).join("\n"):"None")+"\n\n"+
+    lateLabel+":\n"+(late.length?late.map(row=>"- "+row.name).join("\n"):"None")+".";
   sendWA(phone,msg);
   toast("✓ Attendance report opened in WhatsApp");
 }
@@ -1313,21 +1319,58 @@ function attendanceRangeRows(from,to,type="staff"){
 function downloadAttendanceRange(from,to,type="staff"){
   const rows=attendanceRangeRows(from,to,type);
   if(!rows.length){toast("Choose a valid attendance period");return;}
-  const csv=["Date,Employee,Status,Expected Time,Actual Time",...rows.map(row=>[
-    row.date,row.name,row.status,row.expectedTime||"",row.actualTime||""
-  ].map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(","))].join("\n");
+  downloadAttendanceHTML(rows,type,(type==="machine"?"Machine":"Staff")+" attendance report",from+" to "+to,(type==="machine"?"Machine":"Staff")+"_Attendance_"+from+"_to_"+to+".html");
+}
+
+function attendanceHtmlEscape(value){
+  return String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));
+}
+
+function downloadAttendanceHTML(rows,type,title,period,filename){
+  const isMachine=type==="machine";
+  const present=rows.filter(row=>row.status===(isMachine?"on":"present"));
+  const late=rows.filter(row=>attendanceIsLate(row));
+  const absent=rows.filter(row=>row.status===(isMachine?"off":"absent"));
+  const onTime=present.filter(row=>!attendanceIsLate(row));
+  const total=rows.length;
+  const rate=total?Math.round(present.length/total*100):0;
+  const statusRows=[
+    {label:isMachine?"Running on time":"Present on time",count:onTime.length,color:"#3F7D58",soft:"#E4EFE8"},
+    {label:isMachine?"Running late":"Late",count:late.length,color:"#B9762A",soft:"#FBF3E5"},
+    {label:isMachine?"Off":"Absent",count:absent.length,color:"#B5482A",soft:"#F7E7E1"},
+    {label:"Not marked",count:Math.max(0,total-present.length-absent.length),color:"#6B7378",soft:"#EEF1F0"}
+  ];
+  const rowsHtml=rows.map(row=>{
+    const isLate=attendanceIsLate(row);
+    let state="Not marked";
+    if(isLate) state=isMachine?"Running late":"Late";
+    else if(row.status===(isMachine?"on":"present")) state=isMachine?"Running":"Present";
+    else if(row.status===(isMachine?"off":"absent")) state=isMachine?"Off":"Absent";
+    const tone=isLate?"late":state==="Present"||state==="Running"?"good":state==="Absent"||state==="Off"?"bad":"muted";
+    return "<tr><td>"+attendanceHtmlEscape(row.date||period)+"</td><td><strong>"+attendanceHtmlEscape(row.name)+"</strong></td><td>"+attendanceHtmlEscape(row.expectedTime||"—")+"</td><td>"+attendanceHtmlEscape(row.actualTime||"—")+"</td><td><span class=\"tag "+tone+"\">"+state+"</span></td></tr>";
+  }).join("");
+  const statusHtml=statusRows.map(item=>"<div class=\"status-row\"><div class=\"status-label\">"+item.label+"</div><div class=\"status-track\"><div class=\"status-fill\" style=\"width:"+(total?Math.round(item.count/total*100):0)+"%;background:"+item.color+"\"></div></div><strong style=\"color:"+item.color+"\">"+item.count+"</strong></div>").join("");
+  const lateNames=late.length?late.map(row=>"<li>"+attendanceHtmlEscape(row.date?row.date+" · ":"")+attendanceHtmlEscape(row.name)+"<span>"+attendanceHtmlEscape(row.actualTime||"Late arrival")+"</span></li>").join(""):"<li class=\"empty\">No late "+(isMachine?"machines":"staff")+" recorded.</li>";
+  const html="<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>RF Forms — "+attendanceHtmlEscape(title)+"</title><style>"+
+    ":root{--ink:#20242A;--steel:#1E2328;--steel2:#2A3138;--paper:#EEF1F0;--panel:#fff;--line:#DADFDD;--amber:#E29A3C;--green:#3F7D58;--rust:#B5482A;--muted:#6B7378}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,Arial,sans-serif;-webkit-font-smoothing:antialiased}.hero{background:linear-gradient(160deg,var(--steel),var(--steel2));color:#F2F3F1;padding:42px 28px 38px}.hero-inner,.wrap{max-width:1080px;margin:0 auto}.hero-inner{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap}.eyebrow{color:var(--amber);font-size:13px;letter-spacing:.08em;font-weight:700;margin:0 0 8px}.hero h1{font-size:42px;line-height:1.05;margin:0 0 8px;font-weight:700}.period{color:#B7BEC2;font-size:15px;margin:0}.hero-metric{text-align:right}.hero-metric .num{font-size:64px;line-height:1;font-weight:700}.hero-metric .cap{color:#B7BEC2;font-size:13px;margin-top:5px}.wrap{padding:24px 28px 56px}.flow,.card,.kpi{background:var(--panel);border:1px solid var(--line);border-radius:6px}.flow{display:grid;grid-template-columns:repeat(3,1fr);margin-bottom:24px;overflow:hidden}.flow-step{padding:16px 18px;border-right:1px solid var(--line)}.flow-step:last-child{border-right:0}.fnum{color:#B9762A;font-weight:800;font-size:12px}.flabel{font-weight:700;margin:4px 0}.fdesc,.sub{color:var(--muted);font-size:12.5px;line-height:1.45}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}.kpi{padding:16px;border-top:3px solid var(--steel)}.kpi.good{border-top-color:var(--green)}.kpi.warn{border-top-color:var(--amber)}.kpi.bad{border-top-color:var(--rust)}.klabel{color:var(--muted);font-size:12px}.kval{font-size:32px;font-weight:800;margin:5px 0 2px}.ksub{color:var(--muted);font-size:11px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}.card{padding:20px}.card h2{font-size:19px;margin:0 0 4px}.card h3{font-size:16px;margin:0 0 14px}.status-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.status-row:last-child{border:0}.status-label{width:130px;font-size:13px;font-weight:600}.status-track{height:10px;background:#EDEFEE;border-radius:3px;overflow:hidden;flex:1}.status-fill{height:100%;border-radius:3px}.status-row strong{width:26px;text-align:right}.late-list{list-style:none;padding:0;margin:0}.late-list li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.late-list li span{color:var(--rust);font-weight:700}.late-list .empty{color:var(--muted);display:block}.table-card{margin-bottom:22px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:620px;font-size:13px}th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:0 10px 9px;border-bottom:2px solid var(--line)}td{padding:10px;border-bottom:1px solid #F0F1F0}.tag{display:inline-block;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700}.tag.good{background:#E4EFE8;color:#3F7D58}.tag.late{background:#FBF3E5;color:#B9762A}.tag.bad{background:#F7E7E1;color:#B5482A}.tag.muted{background:#EEF1F0;color:#6B7378}footer{border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}@media(max-width:720px){.hero-metric{text-align:left}.flow,.grid{grid-template-columns:1fr}.flow-step{border-right:0;border-bottom:1px solid var(--line)}.flow-step:last-child{border-bottom:0}.kpis{grid-template-columns:1fr 1fr}.hero h1{font-size:34px}.wrap{padding-left:16px;padding-right:16px}}</style></head><body>"+
+    "<header class=\"hero\"><div class=\"hero-inner\"><div><p class=\"eyebrow\">RF FORMS · ATTENDANCE</p><h1>"+attendanceHtmlEscape(title)+"</h1><p class=\"period\">"+attendanceHtmlEscape(period)+" · Generated "+attendanceHtmlEscape(new Date().toLocaleString("en-IN"))+"</p></div><div class=\"hero-metric\"><div class=\"num\">"+rate+"%</div><div class=\"cap\">marked present / running</div></div></div></header><main class=\"wrap\"><section class=\"flow\"><div class=\"flow-step\"><div class=\"fnum\">01</div><div class=\"flabel\">Mark attendance</div><div class=\"fdesc\">Record each "+(isMachine?"machine":"staff member")+" as present or absent.</div></div><div class=\"flow-step\"><div class=\"fnum\">02</div><div class=\"flabel\">Review timing</div><div class=\"fdesc\">Compare actual time against the expected arrival or start time.</div></div><div class=\"flow-step\"><div class=\"fnum\">03</div><div class=\"flabel\">Follow up</div><div class=\"fdesc\">Late and missing entries are surfaced for quick action.</div></div></section><section class=\"kpis\"><div class=\"kpi\"><div class=\"klabel\">Total tracked</div><div class=\"kval\">"+total+"</div><div class=\"ksub\">"+(isMachine?"machines":"staff members")+" in this report</div></div><div class=\"kpi good\"><div class=\"klabel\">On time</div><div class=\"kval\">"+onTime.length+"</div><div class=\"ksub\">present / running within target</div></div><div class=\"kpi warn\"><div class=\"klabel\">Late</div><div class=\"kval\">"+late.length+"</div><div class=\"ksub\">needs attention</div></div><div class=\"kpi bad\"><div class=\"klabel\">"+(isMachine?"Off":"Absent")+"</div><div class=\"kval\">"+absent.length+"</div><div class=\"ksub\">not available / not present</div></div></section><section class=\"grid\"><article class=\"card\"><h2>Attendance overview</h2><p class=\"sub\">Status distribution for the selected period</p>"+statusHtml+"</article><article class=\"card\"><h2>Late follow-up</h2><p class=\"sub\">"+late.length+" late "+(isMachine?"machines":"staff members")+" recorded</p><ul class=\"late-list\">"+lateNames+"</ul></article></section><section class=\"card table-card\"><h2>Detailed attendance</h2><p class=\"sub\">Expected and actual times for every entry</p><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>"+(isMachine?"Machine":"Staff member")+"</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead><tbody>"+rowsHtml+"</tbody></table></div></section><footer><span>RF Forms · Attendance report</span><span>Prepared for internal review</span></footer></main></body></html>";
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-  a.download=(type==="machine"?"Machine":"Staff")+"_Attendance_"+from+"_to_"+to+".csv";a.click();
-  toast("✓ Attendance period downloaded");
+  a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  a.download=filename;a.click();
+  toast("✓ Attendance HTML report downloaded");
 }
 
 function sendAttendanceRange(from,to,type="staff"){
   const phone=String(FB_ATTENDANCE_SETTINGS.reportPhone||"").replace(/[^0-9]/g,"");
   if(!phone){toast("Admin must set the attendance report number first");return;}
-  const absent=attendanceRangeRows(from,to,type).filter(row=>row.status===(type==="machine"?"off":"absent"));
+  const rows=attendanceRangeRows(from,to,type);
+  const absent=rows.filter(row=>row.status===(type==="machine"?"off":"absent"));
+  const late=rows.filter(row=>attendanceIsLate(row));
+  const absentLabel=type==="machine"?"Off machines":"Absent staff";
+  const lateLabel=type==="machine"?"Late machines":"Late staff";
   const msg="RF Factory "+(type==="machine"?"machine":"staff")+" attendance absences ("+from+" to "+to+")\n\n"+
-    (absent.length?absent.map(row=>row.date+" - "+row.name).join("\n"):"No "+(type==="machine"?"machines off":"absent employees")+".");
+    absentLabel+":\n"+(absent.length?absent.map(row=>row.date+" - "+row.name).join("\n"):"None")+"\n\n"+
+    lateLabel+":\n"+(late.length?late.map(row=>row.date+" - "+row.name).join("\n"):"None")+".";
   sendWA(phone,msg);
   toast("✓ Attendance report opened in WhatsApp");
 }
@@ -1410,7 +1453,7 @@ function renderAdminAttendance(bdy){
   range.appendChild(from);range.appendChild(to);bdy.appendChild(range);
   const rangeActions=div({display:"flex",gap:"8px",marginBottom:"16px"});
   rangeActions.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,borderRadius:"8px",color:C.text,padding:"10px 6px",fontSize:"12px"},"Download period",()=>downloadAttendanceRange(from.value,to.value,S.attendanceType)));
-  rangeActions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},"Send absent names",()=>sendAttendanceRange(from.value,to.value,S.attendanceType)));
+  rangeActions.appendChild(btn({flex:"1",background:C.green+"22",border:"1px solid "+C.green+"55",borderRadius:"8px",color:C.green,padding:"10px 6px",fontSize:"12px"},waBtnLabel("Send report on WhatsApp"),()=>sendAttendanceRange(from.value,to.value,S.attendanceType)));
   bdy.appendChild(rangeActions);
 }
 
@@ -2489,6 +2532,13 @@ function showPostSubmitModal(fn){
       downloadMasterExcel(fn,"today");
       ss({screen:"home"});
     }));
+  box.appendChild(btn({width:"100%",background:C.blue+"18",border:"1px solid "+C.blue+"55",borderRadius:"12px",
+    color:C.blue,fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px",
+    },"▣ Download HTML Report",()=>{
+      modal.classList.remove("open");
+      downloadMasterHTML(fn,"today");
+      ss({screen:"home"});
+    }));
   box.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"44",
     borderRadius:"12px",color:C.amber,fontWeight:"700",fontSize:"15px",padding:"13px",marginBottom:"10px"},
     "📊 Go to Reports",()=>{modal.classList.remove("open");ss({screen:"reports",reportForm:fn,reportRange:"today"});}));
@@ -2557,6 +2607,9 @@ function renderHistory(){
       bdy.appendChild(btn({width:"100%",background:C.blue,border:"none",borderRadius:"10px",
         color:"#fff",fontWeight:"800",fontSize:"15px",padding:"13px"},
         "Export CSV",()=>exportCSV(fn,logs)));
+      bdy.appendChild(btn({width:"100%",background:C.green+"18",border:"1px solid "+C.green+"55",borderRadius:"10px",
+        color:C.green,fontWeight:"800",fontSize:"15px",padding:"13px",marginTop:"8px"},
+        "▣ Download HTML Report",()=>downloadMasterHTML(fn,S.reportRange)));
     }
   }
   bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
@@ -2609,7 +2662,10 @@ function renderReports(){
   const dlBtn=btn({background:C.green,border:"none",borderRadius:"8px",color:"#000",
     padding:"7px 12px",fontSize:"13px",fontWeight:"800"},
     "⬇ Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange));
-  w.appendChild(makeHdr("📊 Reports",S.user.name,[dlBtn],()=>ss({screen:"home"}),"← Back"));
+  const htmlBtn=btn({background:C.blue,border:"none",borderRadius:"8px",color:"#fff",
+    padding:"7px 12px",fontSize:"13px",fontWeight:"800"},
+    "▣ HTML",()=>downloadMasterHTML(S.reportForm,S.reportRange));
+  w.appendChild(makeHdr("📊 Reports",S.user.name,[dlBtn,htmlBtn],()=>ss({screen:"home"}),"← Back"));
   const bdy=wrap();
   if(S.user.isAdmin){
     bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
@@ -2710,6 +2766,9 @@ function renderReports(){
       sh.appendChild(btn({background:(m.color||C.amber)+"22",border:"1px solid "+(m.color||C.amber)+"55",
         borderRadius:"8px",color:m.color||C.amber,padding:"6px 10px",fontSize:"12px",fontWeight:"700"},
         "⬇ CSV",()=>exportCSV(fn,logs)));
+      sh.appendChild(btn({background:C.blue+"18",border:"1px solid "+C.blue+"55",
+        borderRadius:"8px",color:C.blue,padding:"6px 10px",fontSize:"12px",fontWeight:"700"},
+        "▣ HTML",()=>downloadMasterHTML(fn,S.reportRange)));
       sec.appendChild(sh);
       logs.slice(0,3).forEach(log=>{
         const d=new Date(log.timestamp);
@@ -2729,6 +2788,9 @@ function renderReports(){
   bdy.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
     color:"#000",fontWeight:"800",fontSize:"17px",padding:"15px"},
     "⬇ Download Master Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange)));
+  bdy.appendChild(btn({width:"100%",background:C.blue,border:"none",borderRadius:"12px",
+    color:"#fff",fontWeight:"800",fontSize:"17px",padding:"15px",marginTop:"8px"},
+    "▣ Download Master HTML",()=>downloadMasterHTML(S.reportForm,S.reportRange)));
   bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
 }
 
@@ -2947,6 +3009,37 @@ function downloadMasterExcel(formFilter,range){
   });
   XLSX.writeFile(wb,"RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_Reports_"+now.toISOString().slice(0,10)+".xlsx");
   toast("✓ Excel downloaded — "+sheets+" sheet(s)");
+}
+
+function downloadMasterHTML(formFilter,range){
+  const allLogs=getFilteredLogs(formFilter,range);
+  if(!allLogs.length){toast("No data in selected range");return;}
+  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const now=new Date();
+  const rows=makeReadableReportRows(allLogs);
+  const needs=rows.filter(row=>row.Result==="Needs Correction").length;
+  const ok=rows.length-needs;
+  const esc=value=>attendanceHtmlEscape(value);
+  const formCards=forms.map(fn=>{
+    const logs=allLogs.filter(log=>log.formName===fn);
+    if(!logs.length) return "";
+    const meta=getFormsMeta()[fn]||{icon:"◉",color:"#E29A3C"};
+    const formRows=makeReadableReportRows(logs);
+    const formNeeds=formRows.filter(row=>row.Result==="Needs Correction").length;
+    const tableRows=formRows.map(row=>{
+      const resultClass=row.Result==="Needs Correction"?"bad":"good";
+      return `<tr><td>${esc(row["Staff Name"])}</td><td>${esc(row.Date)}<br><small>${esc(row.Time)}</small></td><td>${esc(row.Line)}</td><td>${esc(row["Substance / Check"])}</td><td>${esc(row.Answer)}</td><td><span class="tag ${resultClass}">${esc(row.Result)}</span></td></tr>`;
+    }).join("");
+    return `<section class="card"><div class="card-head"><div><div class="form-name" style="color:${esc(meta.color||"#E29A3C")}">${esc(meta.icon||"◉")} ${esc(fn)}</div><div class="muted">${logs.length} submission(s) · ${formNeeds} needs correction</div></div><span class="pill">${Math.max(0,formRows.length-formNeeds)} OK</span></div><div class="table-wrap"><table><thead><tr><th>Staff</th><th>Date</th><th>Line</th><th>Substance / Check</th><th>Answer</th><th>Result</th></tr></thead><tbody>${tableRows}</tbody></table></div></section>`;
+  }).join("");
+  const html="<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>RF Forms — Report</title><style>"+
+    ":root{--ink:#20242A;--steel:#1E2328;--steel2:#2A3138;--paper:#EEF1F0;--panel:#fff;--line:#DADFDD;--amber:#E29A3C;--green:#3F7D58;--rust:#B5482A;--muted:#6B7378}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,Arial,sans-serif;-webkit-font-smoothing:antialiased}.hero{background:linear-gradient(160deg,var(--steel),var(--steel2));color:#F2F3F1;padding:42px 28px 38px}.hero-inner,.wrap{max-width:1120px;margin:0 auto}.hero-inner{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap}.eyebrow{color:var(--amber);font-size:13px;letter-spacing:.08em;font-weight:700;margin:0 0 8px}.hero h1{font-size:42px;line-height:1.05;margin:0 0 8px}.period{color:#B7BEC2;font-size:15px;margin:0}.hero-metric{text-align:right}.hero-metric .num{font-size:64px;line-height:1;font-weight:800}.hero-metric .cap{color:#B7BEC2;font-size:13px;margin-top:5px}.wrap{padding:24px 28px 56px}.flow{display:grid;grid-template-columns:repeat(3,1fr);background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:24px;overflow:hidden}.flow-step{padding:16px 18px;border-right:1px solid var(--line)}.flow-step:last-child{border-right:0}.fnum{color:#B9762A;font-weight:800;font-size:12px}.flabel{font-weight:700;margin:4px 0}.muted,.fdesc{color:var(--muted);font-size:12.5px;line-height:1.45}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}.kpi,.card{background:var(--panel);border:1px solid var(--line);border-radius:6px}.kpi{padding:16px;border-top:3px solid var(--steel)}.kpi.good{border-top-color:var(--green)}.kpi.bad{border-top-color:var(--rust)}.klabel{color:var(--muted);font-size:12px}.kval{font-size:32px;font-weight:800;margin:5px 0 2px}.ksub{color:var(--muted);font-size:11px}.card{padding:20px;margin-bottom:18px}.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px}.form-name{font-size:19px;font-weight:800}.pill,.tag{display:inline-block;padding:4px 9px;border-radius:12px;font-size:11px;font-weight:700}.pill,.tag.good{background:#E4EFE8;color:var(--green)}.tag.bad{background:#F7E7E1;color:var(--rust)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px;font-size:12.5px}th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:0 9px 9px;border-bottom:2px solid var(--line)}td{padding:9px;border-bottom:1px solid #F0F1F0;vertical-align:top}small{color:var(--muted)}footer{border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:8px}@media(max-width:720px){.hero-metric{text-align:left}.flow{grid-template-columns:1fr}.flow-step{border-right:0;border-bottom:1px solid var(--line)}.flow-step:last-child{border-bottom:0}.kpis{grid-template-columns:1fr 1fr}.hero h1{font-size:34px}.wrap{padding-left:16px;padding-right:16px}}</style></head><body>"+
+    "<header class=\"hero\"><div class=\"hero-inner\"><div><p class=\"eyebrow\">RF FORMS · QUALITY REPORT</p><h1>"+esc(formFilter||"Master Report")+"</h1><p class=\"period\">"+esc(range)+" · Generated "+esc(now.toLocaleString("en-IN"))+"</p></div><div class=\"hero-metric\"><div class=\"num\">"+(rows.length?Math.round(ok/rows.length*100):0)+"%</div><div class=\"cap\">overall compliance</div></div></div></header><main class=\"wrap\"><section class=\"flow\"><div class=\"flow-step\"><div class=\"fnum\">01</div><div class=\"flabel\">Submissions logged</div><div class=\"fdesc\">Every completed form is included in the selected range.</div></div><div class=\"flow-step\"><div class=\"fnum\">02</div><div class=\"flabel\">Checks reviewed</div><div class=\"fdesc\">Answers are grouped by form and check type for scanning.</div></div><div class=\"flow-step\"><div class=\"fnum\">03</div><div class=\"flabel\">Follow-up flagged</div><div class=\"fdesc\">Needs Correction entries are highlighted for action.</div></div></section><section class=\"kpis\"><div class=\"kpi\"><div class=\"klabel\">Submissions</div><div class=\"kval\">"+allLogs.length+"</div><div class=\"ksub\">completed forms</div></div><div class=\"kpi good\"><div class=\"klabel\">Passed clean</div><div class=\"kval\">"+ok+"</div><div class=\"ksub\">checks marked OK</div></div><div class=\"kpi bad\"><div class=\"klabel\">Needs correction</div><div class=\"kval\">"+needs+"</div><div class=\"ksub\">flagged for follow-up</div></div><div class=\"kpi\"><div class=\"klabel\">Staff</div><div class=\"kval\">"+[...new Set(allLogs.map(log=>log.user).filter(Boolean))].length+"</div><div class=\"ksub\">unique submitters</div></div></section>"+formCards+"<footer><span>RF Forms · Internal quality report</span><span>Excel remains available for analysis</span></footer></main></body></html>";
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+  a.download="RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_Report_"+now.toISOString().slice(0,10)+".html";
+  a.click();
+  toast("✓ HTML report downloaded");
 }
 
 function exportCSV(fn,logs){

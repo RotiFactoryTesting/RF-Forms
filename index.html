@@ -16,6 +16,13 @@ body{background:#0F0E0C;color:#F0EDE8;font-family:'DM Sans',sans-serif;overscrol
 button{font-family:'DM Sans',sans-serif;cursor:pointer;}
 button:active{opacity:0.75;}
 input,textarea,select{font-family:'DM Sans',sans-serif;}
+.login-backdrop{background:radial-gradient(ellipse at 50% 38%,rgba(240,165,0,.12),transparent 55%),#0F0E0C;}
+.login-glass{width:100%;max-width:420px;padding:32px 26px;border:1px solid rgba(255,255,255,.14);
+  border-radius:24px;background:rgba(255,255,255,.075);box-shadow:0 24px 80px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);}
+.login-field{width:100%;padding:14px 15px;border:1px solid rgba(255,255,255,.15);border-radius:12px;
+  outline:none;background:rgba(12,12,12,.48);color:#F0EDE8;font-size:15px;}
+.login-field:focus{border-color:rgba(240,165,0,.72);box-shadow:0 0 0 3px rgba(240,165,0,.12);}
 input[type=number]{-webkit-appearance:none;-moz-appearance:textfield;}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
 select{-webkit-appearance:none;appearance:none;background:#1e1b18!important;color:#F0EDE8!important;}
@@ -37,7 +44,8 @@ select option{background:#1e1b18!important;color:#F0EDE8!important;}
 <div id="app"></div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getDatabase,ref,set,get,push,onValue,remove,update}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,sendPasswordResetEmail,signOut,browserLocalPersistence,setPersistence}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import{getDatabase,ref,set,get,push,onValue,remove,update,query,orderByChild,equalTo}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
 // Config is NOT hardcoded anymore (was flagged by GitHub secret scanning).
@@ -55,6 +63,7 @@ if (!FB_CFG || !FB_CFG.apiKey || String(FB_CFG.apiKey).includes("PASTE_")) {
   throw new Error("Missing window.RF_FIREBASE_CONFIG. See firebase-config.example.js.");
 }
 const fbApp=initializeApp(FB_CFG);
+const auth=getAuth(fbApp);
 const db=getDatabase(fbApp);
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
@@ -169,17 +178,6 @@ const HI = {
 function t(label){ return (S.user&&S.user.lang==="hi"&&HI[label])||label; }
 function tOpts(opts){ return opts.map(o=>(S.user&&S.user.lang==="hi"&&HI[o])||o); }
 
-// ── DEFAULT DATA (for Firebase seeding) ───────────────────────────────────────
-const DEFAULT_STAFF=[
-  {name:"Saurabh Mehta",pin:"1802",role:"MD",wa:"919810739747",forms:"ALL",alerts:true,reports:true,canReport:true,lang:"en",shift:null,isAdmin:true},
-  {name:"Bishwajeet",pin:"2884",role:"Ops Manager",wa:"918860722884",forms:"Training Log,Pest Control,Metal Detector Calibration",alerts:true,reports:true,canReport:false,lang:"en",shift:null,isAdmin:false},
-  {name:"Manish",pin:"7611",role:"QA Supervisor",wa:"9650687611",forms:"QC Form,Grooming,Housekeeping",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
-  {name:"Dharmendar",pin:"6368",role:"Production Staff",wa:"9210606368",forms:"Machine Status",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
-  {name:"Shabaj",pin:"3058",role:"Maintenance",wa:"8769503058",forms:"Breakdown Report,Maintenance Report",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
-  {name:"Kapil",pin:"8332",role:"Supervisor",wa:"9311248332",forms:"Delivery Checklist",alerts:false,reports:false,canReport:false,lang:"hi",shift:null,isAdmin:false},
-  {name:"Guard 1",pin:"8780",role:"Security",wa:"9560868780",forms:"Visitor Log",alerts:false,reports:false,canReport:false,lang:"hi",shift:"Day Shift",isAdmin:false},
-  {name:"Guard 2",pin:"9080",role:"Security",wa:"9871849080",forms:"Visitor Log",alerts:false,reports:false,canReport:false,lang:"hi",shift:"Night Shift",isAdmin:false},
-];
 const DEFAULT_FORMS_META={
   "QC Form":{icon:"◉",color:"#F0A500",desc:"Production quality — per line",builtin:true},
   "Training Log":{icon:"📋",color:"#38A8E8",desc:"Staff training session record",builtin:true},
@@ -203,61 +201,164 @@ let FB_ATTENDANCE_STAFF={};
 let FB_ATTENDANCE_MACHINES={};
 let FB_ATTENDANCE={};
 let FB_ATTENDANCE_SETTINGS={};
+let FB_ALERT_RECIPIENTS={};
 let FB_READY=false;
+let FB_UNSUBSCRIBERS=[];
+let USER_SUBMISSION_UNSUBSCRIBERS={};
+let AUTH_SESSION_ID=0;
 
-async function fbInit(){
-  // Seed defaults if Firebase is empty
-  try{
-    const [staffSnap,formsSnap,attendanceStaffSnap,attendanceMachineSnap]=await Promise.all([
-      get(ref(db,"staff")),get(ref(db,"forms_meta")),get(ref(db,"attendance_staff")),get(ref(db,"attendance_machines"))
-    ]);
-    if(!staffSnap.exists()){
-      const obj={};
-      DEFAULT_STAFF.forEach((s,i)=>{obj["s"+i]={...s};});
-      await set(ref(db,"staff"),obj);
-    }
-    if(!formsSnap.exists()){
-      await set(ref(db,"forms_meta"),DEFAULT_FORMS_META);
-    }
-    if(!attendanceStaffSnap.exists()) await set(ref(db,"attendance_staff"),{});
-    if(!attendanceMachineSnap.exists()) await set(ref(db,"attendance_machines"),{});
-  }catch(e){
-    console.error("Startup Firebase read/seed blocked — continuing with local/default data:",e);
-  }
-  // Live listeners
-  onValue(ref(db,"staff"),snap=>{
-    const d=snap.val()||{};
-    FB_STAFF=Object.entries(d).map(([k,v])=>({...v,_key:k}));
-    if(FB_READY) render();
-  },err=>console.error("Staff read blocked:",err));
-  onValue(ref(db,"forms_meta"),snap=>{
-    FB_FORMS_META=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Forms meta read blocked:",err));
-  onValue(ref(db,"submissions"),snap=>{
-    FB_SUBMISSIONS=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Submissions read blocked:",err));
-  onValue(ref(db,"attendance_staff"),snap=>{
-    FB_ATTENDANCE_STAFF=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Attendance staff read blocked:",err));
-  onValue(ref(db,"attendance_machines"),snap=>{
-    FB_ATTENDANCE_MACHINES=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Attendance machines read blocked:",err));
-  onValue(ref(db,"attendance"),snap=>{
-    FB_ATTENDANCE=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Attendance read blocked:",err));
-  onValue(ref(db,"attendance_settings"),snap=>{
-    FB_ATTENDANCE_SETTINGS=snap.val()||{};
-    if(FB_READY) render();
-  },err=>console.error("Attendance settings read blocked:",err));
-  FB_READY=true;
-  S.screen="login";
-  render();
+function stopFirebaseListeners(){
+  FB_UNSUBSCRIBERS.forEach(unsubscribe=>unsubscribe());
+  Object.values(USER_SUBMISSION_UNSUBSCRIBERS).forEach(unsubscribe=>unsubscribe());
+  FB_UNSUBSCRIBERS=[];
+  USER_SUBMISSION_UNSUBSCRIBERS={};
+  FB_STAFF=[];FB_FORMS_META={};FB_SUBMISSIONS={};
+  FB_ATTENDANCE_STAFF={};FB_ATTENDANCE_MACHINES={};
+  FB_ATTENDANCE={};FB_ATTENDANCE_SETTINGS={};FB_ALERT_RECIPIENTS={};FB_READY=false;
 }
+
+function listen(path,onData,label){
+  const sessionId=AUTH_SESSION_ID;
+  const unsubscribe=onValue(ref(db,path),snap=>onData(snap.val()),error=>{
+    if(sessionId!==AUTH_SESSION_ID) return;
+    console.error(label+" read failed:",error);
+    toast("⚠ "+label+" could not be loaded. Check Firebase rules.",4000);
+  });
+  FB_UNSUBSCRIBERS.push(unsubscribe);
+}
+
+function listenToOwnSubmissions(){
+  if(!S.user||S.user.canReport||S.user.isAdmin) return;
+  Object.keys({...DEFAULT_FORMS_META,...getFormsMeta()}).forEach(formName=>{
+    const formKey=formName.replace(/ /g,"_");
+    if(USER_SUBMISSION_UNSUBSCRIBERS[formKey]) return;
+    const sessionId=AUTH_SESSION_ID;
+    const ownEntries=query(ref(db,"submissions/"+formKey),orderByChild("uid"),equalTo(S.user.uid));
+    USER_SUBMISSION_UNSUBSCRIBERS[formKey]=onValue(ownEntries,snap=>{
+      if(sessionId!==AUTH_SESSION_ID) return;
+      FB_SUBMISSIONS[formKey]=snap.val()||{};
+      if(FB_READY) render();
+    },error=>{
+      if(sessionId!==AUTH_SESSION_ID) return;
+      console.error("Own "+formName+" submissions read failed:",error);
+      toast("⚠ "+formName+" history could not be loaded.",4000);
+    });
+  });
+}
+
+async function startAuthenticatedSession(firebaseUser){
+  const sessionId=++AUTH_SESSION_ID;
+  stopFirebaseListeners();
+  S.screen="loading";S.user=null;S.authBusy=false;render();
+  try{
+    const accessSnap=await get(ref(db,"access/"+firebaseUser.uid));
+    if(sessionId!==AUTH_SESSION_ID||auth.currentUser?.uid!==firebaseUser.uid) return;
+    if(!accessSnap.exists()) throw profileSetupError("This Firebase account has not been assigned to an RF Forms staff profile.");
+    const accessProfile=accessSnap.val();
+    if(!accessProfile.staffKey||accessProfile.disabled===true)
+      throw profileSetupError("This Firebase account is disabled or has no linked staff profile.");
+    const staffSnap=await get(ref(db,"staff/"+accessProfile.staffKey));
+    if(sessionId!==AUTH_SESSION_ID||auth.currentUser?.uid!==firebaseUser.uid) return;
+    if(!staffSnap.exists()) throw profileSetupError("The linked RF Forms staff profile was not found.");
+    const staffProfile=staffSnap.val();
+    if(staffProfile.authUid!==firebaseUser.uid)
+      throw profileSetupError("The staff profile is not linked to this Firebase account.");
+    S.user={...staffProfile,...accessProfile,uid:firebaseUser.uid,email:firebaseUser.email,_key:accessProfile.staffKey};
+    S.screen="home";S.authError="";
+
+    if(S.user.isAdmin){
+      listen("staff",value=>{
+        FB_STAFF=Object.entries(value||{}).map(([key,staff])=>({...staff,_key:key}));
+        const pinKeys=Object.keys(value||{}).filter(key=>value[key]&&Object.prototype.hasOwnProperty.call(value[key],"pin"));
+        if(pinKeys.length) Promise.all(pinKeys.map(key=>update(ref(db,"staff/"+key),{pin:null})))
+          .catch(error=>{
+            console.error("Legacy PIN cleanup failed:",error);
+            toast("⚠ Old PIN data could not be removed. Delete the pin fields in Firebase Console.",5000);
+          });
+        const alertRecipients={};
+        Object.entries(value||{}).forEach(([key,staff])=>{
+          if(staff&&staff.wa&&(staff.alerts||staff.reports||staff.isAdmin))
+            alertRecipients[key]={wa:staff.wa,alerts:!!staff.alerts,reports:!!staff.reports};
+        });
+        set(ref(db,"alert_recipients"),alertRecipients).catch(error=>{
+          console.error("Alert recipient list update failed:",error);
+          toast("⚠ Notification contacts could not be updated.",4000);
+        });
+        if(FB_READY) render();
+      },"Staff");
+    }else{
+      FB_STAFF=[{...S.user}];
+      listen("staff/"+accessProfile.staffKey,value=>{
+        if(!value){
+          S.authError="The linked staff profile was removed. Contact the administrator.";
+          signOut(auth).catch(error=>console.error("Sign out after missing profile failed:",error));
+          return;
+        }
+        S.user={...value,...accessProfile,uid:firebaseUser.uid,email:firebaseUser.email,_key:accessProfile.staffKey};
+        FB_STAFF=[{...S.user}];
+        if(FB_READY) render();
+      },"Staff profile");
+    }
+    listen("forms_meta",value=>{
+      FB_FORMS_META=value||{};
+      if(!value&&S.user.isAdmin)
+        set(ref(db,"forms_meta"),DEFAULT_FORMS_META).catch(error=>{
+          console.error("Default forms setup failed:",error);
+          toast("⚠ Default forms could not be initialized.",4000);
+        });
+      listenToOwnSubmissions();
+      if(FB_READY) render();
+    },"Forms");
+    listen("alert_recipients",value=>{FB_ALERT_RECIPIENTS=value||{};},"Notification contacts");
+    if(S.user.isAdmin||S.user.canReport){
+      listen("submissions",value=>{FB_SUBMISSIONS=value||{};if(FB_READY) render();},"Submissions");
+    }else{
+      listenToOwnSubmissions();
+    }
+    if(S.user.isAdmin||S.user.canAttendance){
+      listen("attendance_staff",value=>{FB_ATTENDANCE_STAFF=value||{};if(FB_READY) render();},"Attendance staff");
+      listen("attendance_machines",value=>{FB_ATTENDANCE_MACHINES=value||{};if(FB_READY) render();},"Attendance machines");
+      listen("attendance",value=>{FB_ATTENDANCE=value||{};if(FB_READY) render();},"Attendance records");
+    }
+    if(S.user.isAdmin){
+      listen("attendance_settings",value=>{FB_ATTENDANCE_SETTINGS=value||{};if(FB_READY) render();},"Attendance settings");
+    }
+    FB_READY=true;render();notifyPendingSubmissions();
+  }catch(error){
+    if(sessionId!==AUTH_SESSION_ID||auth.currentUser?.uid!==firebaseUser.uid) return;
+    console.error("Firebase account setup failed:",error);
+    S.user=null;
+    if(error.code==="rf/profile"){
+      S.authError=error.message;
+      signOut(auth).catch(signOutError=>console.error("Sign out after invalid profile failed:",signOutError));
+      return;
+    }else{
+      S.authError=error.code==="PERMISSION_DENIED"?
+        "Firebase blocked access. Check that the database rules and account profile are set up correctly.":
+        "Could not connect to RF Forms. Your sign-in is saved; check your connection and retry.";
+      S.screen="authError";
+    }
+    render();
+  }
+}
+
+function profileSetupError(message){
+  const error=new Error(message);error.code="rf/profile";return error;
+}
+
+onAuthStateChanged(auth,firebaseUser=>{
+  if(firebaseUser) startAuthenticatedSession(firebaseUser);
+  else{
+    AUTH_SESSION_ID++;
+    stopFirebaseListeners();
+    S.user=null;S.authBusy=false;S.screen="login";render();
+  }
+},error=>{
+  AUTH_SESSION_ID++;
+  console.error("Firebase Authentication state failed:",error);
+  S.authError="Could not verify your sign-in. Check your connection and try again.";
+  S.screen="login";render();
+});
 
 function todayKey(){
   const d=new Date();
@@ -282,7 +383,7 @@ function timeMinutes(value){
 function attendanceIsLate(row){
   return ["present","on"].includes(row.status)&&timeMinutes(row.actualTime)>timeMinutes(row.expectedTime);
 }
-function attendanceLocalKey(date){return "rf_attendance_"+date;}
+function attendanceLocalKey(date){return "rf_attendance_"+(S.user?.uid||"anonymous")+"_"+date;}
 function getLocalAttendance(date){
   try{const raw=localStorage.getItem(attendanceLocalKey(date));return raw?JSON.parse(raw):{};}catch(e){return {};}
 }
@@ -313,19 +414,8 @@ async function saveAttendanceSettings(data){
   catch(e){toast("⚠ Attendance settings could not be saved",3500);}
 }
 
-function getStaff(){
-  const base=FB_STAFF.length?FB_STAFF:DEFAULT_STAFF.map((s,i)=>({...s,_key:"s"+i}));
-  const overrides=getLocalStaffOverrides();
-  if(!Object.keys(overrides).length) return base;
-  const merged=base
-    .filter(s=>!(overrides[s._key]&&overrides[s._key]._deleted))
-    .map(s=>(overrides[s._key]&&!overrides[s._key]._deleted)?{...overrides[s._key],_key:s._key}:s);
-  Object.keys(overrides).forEach(k=>{
-    if(k.startsWith("local_")&&!overrides[k]._deleted&&!merged.find(s=>s._key===k)) merged.push({...overrides[k],_key:k});
-  });
-  return merged;
-}
-function localFormsMetaKey(){return "rf_local_forms_meta";}
+function getStaff(){return FB_STAFF;}
+function localFormsMetaKey(){return "rf_local_forms_meta_"+(S.user?.uid||"anonymous");}
 function getLocalFormsMetaOverrides(){
   try{const raw=localStorage.getItem(localFormsMetaKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
 }
@@ -349,61 +439,43 @@ function getFormsMeta(){
 }
 
 // Firebase write helpers
-function localStaffKey(){return "rf_local_staff_overrides";}
-function getLocalStaffOverrides(){
-  try{const raw=localStorage.getItem(localStaffKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
-}
-function setLocalStaffOverride(key,data){
-  try{
-    const all=getLocalStaffOverrides();
-    all[key]=data; // data may be {_deleted:true} as a tombstone for a Firebase-backed record
-    localStorage.setItem(localStaffKey(),JSON.stringify(all));
-  }catch(e){console.error(e);}
-}
 async function fbSaveStaff(key,data){
-  try{
-    if(key) await update(ref(db,"staff/"+key),data);
-    else await push(ref(db,"staff"),data);
-    return true;
-  }catch(e){
-    console.error("Staff save failed, keeping on this device instead:",e);
-    setLocalStaffOverride(key||("local_"+Date.now()),data);
-    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
-    return true;
+  const clean={...data};delete clean.pin;
+  const previous=key?FB_STAFF.find(staff=>staff._key===key):null;
+  const staffKey=key||push(ref(db,"staff")).key;
+  const updates={};
+  updates["staff/"+staffKey]=clean;
+  if(previous&&previous.authUid&&previous.authUid!==clean.authUid)
+    updates["access/"+previous.authUid]=null;
+  if(clean.authUid){
+    const formAccess={};
+    if(clean.forms&&clean.forms!=="ALL")
+      toArr(clean.forms).forEach(formName=>{formAccess[formName.replace(/ /g,"_")]=true;});
+    updates["access/"+clean.authUid]={
+      staffKey,name:clean.name,role:clean.role||"",forms:clean.forms||"",
+      formAccess,
+      alerts:!!clean.alerts,reports:!!clean.reports,canReport:!!clean.canReport,
+      canAttendance:!!clean.canAttendance,isAdmin:!!clean.isAdmin,
+      lang:clean.lang||"en",shift:clean.shift||null
+    };
   }
+  await update(ref(db),updates);
+  return true;
 }
 async function fbDeleteStaff(key){
-  if(String(key).startsWith("local_")){
-    const all=getLocalStaffOverrides();delete all[key];
-    try{localStorage.setItem(localStaffKey(),JSON.stringify(all));}catch(e){}
-    return;
-  }
-  try{
-    await remove(ref(db,"staff/"+key));
-  }catch(e){
-    console.error("Staff delete failed, hiding on this device instead:",e);
-    setLocalStaffOverride(key,{_deleted:true});
-    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
-  }
+  const staff=FB_STAFF.find(item=>item._key===key);
+  const updates={};
+  updates["staff/"+key]=null;
+  if(staff&&staff.authUid) updates["access/"+staff.authUid]=null;
+  await update(ref(db),updates);
 }
 async function fbSaveFormMeta(name,data){
-  try{await set(ref(db,"forms_meta/"+name),data);return true;}
-  catch(e){
-    console.error("Form save failed, keeping on this device instead:",e);
-    setLocalFormsMetaOverride(name,data);
-    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
-    return true;
-  }
+  await set(ref(db,"forms_meta/"+name),data);
 }
 async function fbDeleteFormMeta(name){
-  try{await remove(ref(db,"forms_meta/"+name));}
-  catch(e){
-    console.error("Form delete failed, hiding on this device instead:",e);
-    setLocalFormsMetaOverride(name,{_deleted:true});
-    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
-  }
+  await remove(ref(db,"forms_meta/"+name));
 }
-function localFieldsKey(){return "rf_local_custom_fields";}
+function localFieldsKey(){return "rf_local_custom_fields_"+(S.user?.uid||"");}
 function getLocalFieldsOverrides(){
   try{const raw=localStorage.getItem(localFieldsKey());return raw?JSON.parse(raw):{};}catch(e){return {};}
 }
@@ -419,34 +491,15 @@ function setLocalFieldOverride(formName,key,data){
 async function fbSaveField(formName,fd){
   const key=fd._key||("f"+Date.now());
   const d={...fd};delete d._key;
-  try{
-    await set(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key),d);
-    return true;
-  }catch(e){
-    console.error("Field save failed, keeping on this device instead:",e);
-    setLocalFieldOverride(formName,key,d);
-    toast("⚠ Saved on this device only (cloud sync blocked)",3500);
-    return true;
-  }
+  await set(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key),d);
 }
 async function fbDeleteField(formName,key){
-  try{
-    await remove(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key));
-  }catch(e){
-    console.error("Field delete failed, hiding on this device instead:",e);
-    setLocalFieldOverride(formName,key,{_deleted:true});
-    toast("⚠ Removed on this device only (cloud sync blocked)",3500);
-  }
+  await remove(ref(db,"custom_fields/"+formName.replace(/ /g,"_")+"/"+key));
 }
 async function fbGetFields(formName){
   const fk=formName.replace(/ /g,"_");
-  let fbFields=[];
-  try{
-    const snap=await get(ref(db,"custom_fields/"+fk));
-    if(snap.exists()) fbFields=Object.entries(snap.val()).map(([k,v])=>({...v,_key:k}));
-  }catch(e){
-    console.error("Fields read blocked, using local cache only:",e);
-  }
+  const snap=await get(ref(db,"custom_fields/"+fk));
+  const fbFields=snap.exists()?Object.entries(snap.val()).map(([k,v])=>({...v,_key:k})):[];
   const overrides=getLocalFieldsOverrides()[fk]||{};
   const seen=new Set(fbFields.map(f=>f._key));
   const merged=fbFields
@@ -460,7 +513,7 @@ async function fbGetFields(formName){
 // ── DRAFTS ────────────────────────────────────────────────────────────────────
 function draftKey(fn){
   const d=new Date().toISOString().slice(0,10); // YYYY-MM-DD
-  return "drafts/"+fn.replace(/ /g,"_")+"/"+S.user.pin+"_"+d;
+  return "drafts/"+S.user.uid+"/"+fn.replace(/ /g,"_")+"/"+d;
 }
 async function saveDraft(fn){
   try{
@@ -506,7 +559,7 @@ function getFormLogs(fn){
   return [...fbLogs,...localLogs].sort((a,b)=>b.id-a.id);
 }
 // ── LOCAL FALLBACK (used only when Firebase write/read is blocked, e.g. permission-denied) ──
-function localSubKey(fn){return "rf_local_submissions_"+fn.replace(/ /g,"_");}
+function localSubKey(fn){return "rf_local_submissions_"+(S.user?.uid||"anonymous")+"_"+fn.replace(/ /g,"_");}
 function getLocalSubmissions(fn){
   try{
     const raw=localStorage.getItem(localSubKey(fn));
@@ -526,15 +579,15 @@ function deleteLocalSubmission(fn,key){
     localStorage.setItem(localSubKey(fn),JSON.stringify(list));
   }catch(e){console.error(e);}
 }
-const PENDING_SUBMISSIONS_KEY="rf_pending_submissions";
+function pendingSubmissionsKey(){return "rf_pending_submissions_"+(S.user?.uid||"anonymous");}
 function getPendingSubmissions(){
   try{
-    const raw=localStorage.getItem(PENDING_SUBMISSIONS_KEY);
+    const raw=localStorage.getItem(pendingSubmissionsKey());
     return raw?JSON.parse(raw):[];
   }catch(e){console.error("Pending submissions read failed:",e);return [];}
 }
 function setPendingSubmissions(list){
-  try{localStorage.setItem(PENDING_SUBMISSIONS_KEY,JSON.stringify(list));return true;}
+  try{localStorage.setItem(pendingSubmissionsKey(),JSON.stringify(list));return true;}
   catch(e){console.error("Pending submissions save failed:",e);return false;}
 }
 function queuePendingSubmission(fn,entry){
@@ -550,6 +603,8 @@ function cleanSubmission(entry){
   return JSON.parse(JSON.stringify(entry));
 }
 async function uploadPendingSubmission(item){
+  if(!S.user||item.entry.uid!==S.user.uid)
+    throw new Error("Pending submission belongs to a different signed-in account.");
   await push(ref(db,"submissions/"+item.fn.replace(/ /g,"_")),item.entry);
   removePendingSubmission(item.fn,item.entry.id);
 }
@@ -589,7 +644,7 @@ function showPendingSubmissionsModal(){
   modal.onclick=e=>{if(e.target===modal)modal.classList.remove("open");};
 }
 function notifyPendingSubmissions(){
-  if(navigator.onLine) setTimeout(showPendingSubmissionsModal,500);
+  if(S.user&&navigator.onLine) setTimeout(showPendingSubmissionsModal,500);
 }
 window.addEventListener("online",notifyPendingSubmissions);
 async function fbAddLog(fn,entry){
@@ -597,7 +652,7 @@ async function fbAddLog(fn,entry){
     toast("⚠ Staff name is required before submitting",3500);
     return false;
   }
-  const cleanEntry=cleanSubmission(entry);
+  const cleanEntry={...cleanSubmission(entry),uid:S.user.uid};
   if(!navigator.onLine){
     if(!queuePendingSubmission(fn,cleanEntry)){
       toast("⚠ Could not store this submission on the device.",3500);
@@ -630,8 +685,9 @@ async function fbDelLog(fn,key){
 const S={
   screen:"loading",
   user:null,
-  pin:"",
-  pinError:false,
+  loginEmail:"",
+  authError:"",
+  authBusy:false,
   // form filling
   activeForm:null,
   fData:{},        // flat form data {fieldKey: value}
@@ -683,7 +739,8 @@ function toArr(forms){
 }
 function getUserForms(u){
   if(!u) return [];
-  if(!u.forms||u.forms==="ALL") return Object.keys(getFormsMeta());
+  if(u.forms==="ALL") return Object.keys(getFormsMeta());
+  if(!u.forms) return [];
   return toArr(u.forms);
 }
 function toast(msg,ms=2500){
@@ -697,7 +754,7 @@ function sendAlerts(fails,fn,who){
   const now=new Date().toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"});
   let msg="🚨 *RF Forms Alert — "+fn+"*\n"+now+" · "+who+"\n\n";
   fails.forEach(f=>msg+="• "+f+"\n");
-  getStaff().filter(s=>s.alerts).forEach(r=>sendWA(r.wa,msg));
+  Object.values(FB_ALERT_RECIPIENTS).filter(r=>r.alerts).forEach(r=>sendWA(r.wa,msg));
 }
 function afterSubmit(fn){
   clearDraft(fn); // Clear saved draft on successful submit
@@ -1060,64 +1117,101 @@ function renderLoading(){
     alignItems:"center",justifyContent:"center",gap:"16px"});
   w.appendChild(div({width:"52px",height:"52px",background:C.amber,borderRadius:"14px",
     display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",color:"#000"},"◉"));
-  w.appendChild(span({fontSize:"16px",color:C.muted},"Connecting to RF Forms…"));
-  w.appendChild(span({fontSize:"13px",color:C.muted},"Please ensure internet connection"));
-  setTimeout(()=>{
-    if(S.screen!=="loading") return;
-    w.appendChild(btn({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",
-      color:C.muted,padding:"10px 24px",fontSize:"14px",fontWeight:"700",marginTop:"8px"},
-      "Continue without sync",()=>{FB_READY=true;S.screen="login";render();}));
-  },4000);
-  setTimeout(()=>{if(S.screen==="loading"){FB_READY=true;S.screen="login";render();}},8000);
+  w.appendChild(span({fontSize:"16px",color:C.muted},"Checking your saved sign-in…"));
+  w.appendChild(span({fontSize:"13px",color:C.muted},"Please wait for secure account verification"));
   return w;
 }
 
 function renderLogin(){
-  const w=div({minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",
-    alignItems:"center",justifyContent:"center",padding:"0 24px"});
-  w.appendChild(div({width:"52px",height:"52px",background:C.amber,borderRadius:"14px",
+  const w=el("div",{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",
+    padding:"24px"},null,{class:"login-backdrop"});
+  const card=el("div",null,null,{class:"login-glass"});
+  card.appendChild(div({width:"52px",height:"52px",background:C.amber,borderRadius:"15px",
     display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",
-    marginBottom:"16px",color:"#000"},"◉"));
-  w.appendChild(span({fontSize:"22px",fontWeight:"800",marginBottom:"4px"},"RF Forms"));
-  w.appendChild(span({fontSize:"14px",color:C.muted,marginBottom:"40px"},"RF Factory · Dehradun"));
-  const dots=div({display:"flex",gap:"14px",marginBottom:S.pinError?"20px":"36px"});
-  for(let i=0;i<4;i++){
-    const filled=i<S.pin.length,err=S.pinError;
-    dots.appendChild(div({width:"14px",height:"14px",borderRadius:"50%",
-      border:"2px solid "+(err?C.red:filled?C.amber:C.border),
-      background:err?C.red:filled?C.amber:"rgba(255,255,255,0.15)",
-      transition:"background 0.15s"}));
-  }
-  w.appendChild(dots);
-  if(S.pinError){
-    const e=div({fontSize:"14px",color:C.red,marginBottom:"20px",textAlign:"center"});
-    e.textContent="Incorrect PIN";w.appendChild(e);
-  }
-  const pad=div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px",
-    width:"100%",maxWidth:"260px"});
-  [1,2,3,4,5,6,7,8,9,"",0,"⌫"].forEach(d=>{
-    if(d===""){pad.appendChild(div({padding:"18px"}));return;}
-    if(d==="⌫"){
-      pad.appendChild(btn({background:"rgba(232,92,56,0.12)",
-        border:"1.5px solid rgba(232,92,56,0.27)",borderRadius:"14px",
-        color:C.red,fontSize:"22px",fontWeight:"700",padding:"18px 0"},d,
-        ()=>ss({pin:S.pin.slice(0,-1),pinError:false})));
-      return;
-    }
-    pad.appendChild(btn({background:C.surface,border:"1.5px solid "+C.border,
-      borderRadius:"14px",color:C.text,fontSize:"22px",fontWeight:"700",padding:"18px 0"},
-      String(d),()=>handlePin(String(d))));
+    margin:"0 auto 16px",color:"#000",boxShadow:"0 8px 24px rgba(240,165,0,.2)"},"◉"));
+  card.appendChild(div({fontSize:"24px",fontWeight:"800",textAlign:"center",marginBottom:"5px"},"RF Forms"));
+  card.appendChild(div({fontSize:"14px",color:C.muted,textAlign:"center",marginBottom:"26px"},"RF Factory · Dehradun"));
+  card.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",textAlign:"center",marginBottom:"22px"},
+    "Sign in once on this device. Your secure session will be remembered."));
+  const email=el("input",{marginBottom:"12px"},null,{
+    type:"email",name:"username",autocomplete:"username",placeholder:"Work email",required:"required",
+    inputmode:"email",autocapitalize:"none",spellcheck:"false",class:"login-field"
   });
-  w.appendChild(pad);return w;
+  email.value=S.loginEmail||"";
+  email.addEventListener("input",e=>{S.loginEmail=e.target.value;});
+  card.appendChild(email);
+  const password=el("input",null,null,{
+    type:"password",name:"password",autocomplete:"current-password",placeholder:"Password",required:"required",class:"login-field"
+  });
+  card.appendChild(password);
+  if(S.authError){
+    const error=div({fontSize:"13px",color:C.red,lineHeight:"1.5",marginTop:"14px",textAlign:"center"});
+    error.textContent=S.authError;card.appendChild(error);
+  }
+  const submit=btn({width:"100%",background:C.amber,border:"none",borderRadius:"12px",
+    color:"#17130B",fontSize:"15px",fontWeight:"800",padding:"14px",marginTop:"18px",
+    boxShadow:"0 8px 24px rgba(240,165,0,.18)"},"Sign In",async()=>{
+    if(S.authBusy) return;
+    const emailValue=email.value.trim(),passwordValue=password.value;
+    if(!emailValue||!passwordValue){S.authError="Enter your work email and password.";render();return;}
+    S.authBusy=true;S.authError="";submit.disabled=true;submit.textContent="Signing in…";
+    try{
+      await setPersistence(auth,browserLocalPersistence);
+      await signInWithEmailAndPassword(auth,emailValue,passwordValue);
+    }catch(error){
+      console.error("Sign in failed:",error);
+      const messages={
+        "auth/invalid-credential":"Email or password is incorrect.",
+        "auth/user-not-found":"Email or password is incorrect.",
+        "auth/wrong-password":"Email or password is incorrect.",
+        "auth/too-many-requests":"Too many attempts. Wait a while, then try again.",
+        "auth/network-request-failed":"Could not connect. Check your internet connection.",
+        "auth/operation-not-allowed":"Email/password sign-in is not enabled in Firebase."
+      };
+      S.authError=messages[error.code]||"Sign-in failed. Please try again or contact the administrator.";
+      S.authBusy=false;render();
+    }
+  });
+  submit.disabled=!!S.authBusy;
+  if(S.authBusy) submit.textContent="Signing in…";
+  card.appendChild(submit);
+  card.appendChild(btn({display:"block",margin:"16px auto 0",padding:"4px",background:"none",
+    border:"none",color:C.muted,fontSize:"13px"},"Forgot password?",async()=>{
+    if(!email.value.trim()){S.authError="Enter your email first, then select Forgot password.";render();return;}
+    try{
+      await sendPasswordResetEmail(auth,email.value.trim());
+      S.authError="Password reset instructions have been sent if this email has an account.";
+      render();
+    }catch(error){
+      console.error("Password reset request failed:",error);
+      S.authError=error.code==="auth/network-request-failed"?
+        "Could not connect. Check your internet connection.":"Could not send a reset email. Contact the administrator.";
+      render();
+    }
+  }));
+  card.appendChild(div({fontSize:"11px",color:C.muted,textAlign:"center",lineHeight:"1.5",marginTop:"18px"},
+    "Use the email and password provided by your administrator. Passwords are never stored in this app."));
+  w.appendChild(card);return w;
 }
 
-function handlePin(d){
-  if(S.pinError) ss({pinError:false,pin:""});
-  const next=S.pin+d;
-  if(next.length<4){ss({pin:next});return;}
-  const found=getStaff().find(u=>u.pin===next);
-  if(found) ss({user:{...found},screen:"home",pin:"",pinError:false});
-  else{ss({pin:next,pinError:true});setTimeout(()=>ss({pin:"",pinError:false}),800);}
+function renderAuthError(){
+  const w=div({minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"});
+  const card=el("div",{width:"100%",maxWidth:"420px",padding:"28px",border:"1px solid "+C.border,
+    borderRadius:"20px",background:"rgba(255,255,255,.06)",textAlign:"center"});
+  card.appendChild(div({fontSize:"30px",marginBottom:"12px"},"⚠"));
+  card.appendChild(div({fontSize:"18px",fontWeight:"800",marginBottom:"10px"},"Secure connection unavailable"));
+  card.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",marginBottom:"20px"},S.authError));
+  card.appendChild(btn({width:"100%",background:C.amber,border:"none",borderRadius:"10px",
+    color:"#17130B",fontWeight:"800",padding:"12px"},"Retry",()=>{
+    if(auth.currentUser) startAuthenticatedSession(auth.currentUser);
+    else{S.screen="login";render();}
+  }));
+  card.appendChild(btn({marginTop:"12px",padding:"8px",background:"none",border:"none",
+    color:C.muted,fontWeight:"700"},"Sign out",async()=>{
+    try{await signOut(auth);}
+    catch(error){console.error("Sign out failed:",error);toast("⚠ Could not sign out. Try again.",3500);}
+  }));
+  w.appendChild(card);return w;
 }
 
 function renderHome(){
@@ -1137,7 +1231,11 @@ function renderHome(){
     ()=>ss({screen:"reports",reportForm:null,reportRange:"today"})));
   hBtns.push(btn({background:"rgba(232,92,56,0.1)",border:"none",borderRadius:"8px",
     color:C.red,padding:"7px 10px",fontSize:"13px"},"Logout",
-    ()=>ss({screen:"login",user:null,pin:""})));
+    async()=>{
+      S.authError="";
+      try{await signOut(auth);}
+      catch(error){console.error("Sign out failed:",error);toast("⚠ Could not sign out. Try again.",3500);}
+    }));
   w.appendChild(makeHdr("RF Forms",u.name+" · "+u.role+(u.shift?" ("+u.shift+")":""),hBtns));
   const bdy=wrap();
   const today=new Date().toDateString();
@@ -1186,7 +1284,7 @@ function renderHome(){
     right.appendChild(span({fontSize:"18px",color:C.muted,display:"block",marginTop:"4px"},"→"));
     card.appendChild(right);bdy.appendChild(card);
   });
-  if(u.alerts||u.reports||u.isAdmin){
+  if(u.canReport||u.isAdmin){
     bdy.appendChild(div({height:"1px",background:C.border,margin:"20px 0"}));
     bdy.appendChild(btn({width:"100%",background:"rgba(45,212,160,0.1)",
       border:"2px solid rgba(45,212,160,0.4)",borderRadius:"12px",color:C.green,
@@ -1513,14 +1611,16 @@ function renderAdminStaff(bdy){
   bdy.appendChild(btn({width:"100%",background:C.amber+"18",border:"2px solid "+C.amber+"55",
     borderRadius:"12px",color:C.amber,fontWeight:"800",fontSize:"15px",padding:"13px",
     marginBottom:"16px"},"+ Add New Staff Member",
-    ()=>ss({editingStaff:{name:"",pin:"",role:"",wa:"",forms:"",lang:"en",alerts:false,reports:false,canReport:false,canAttendance:false,isAdmin:false,shift:null}})));
+    ()=>ss({editingStaff:{name:"",authUid:"",role:"",wa:"",forms:"",lang:"en",alerts:false,reports:false,canReport:false,canAttendance:false,isAdmin:false,shift:null}})));
 
   if(S.editingStaff!==null){
     const es=S.editingStaff;
     const card=div({background:"#1e1b18",border:"1px solid "+C.amber+"44",borderRadius:"14px",padding:"16px",marginBottom:"16px"});
     card.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.amber,marginBottom:"14px"},es._key?"Edit Staff":"New Staff Member"));
     card.appendChild(aInp("Full Name","name",es,"e.g. Ramesh Kumar"));
-    card.appendChild(aInp("PIN (4 digits)","pin",es,"e.g. 5678"));
+    card.appendChild(aInp("Firebase Authentication UID","authUid",es,"Create account in Firebase Console first"));
+    card.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.5",marginBottom:"12px"},
+      "Create the email/password account in Firebase Console → Authentication, then paste its UID here. Saving links this staff profile to that account."));
     card.appendChild(aInp("Role","role",es,"e.g. QA Supervisor"));
     card.appendChild(aInp("WhatsApp Number","wa",es,"e.g. 919810000000"));
     // Language
@@ -1545,10 +1645,14 @@ function renderAdminStaff(bdy){
     const fr=div({display:"flex",gap:"6px",marginBottom:"12px"});
     [{key:"alerts",label:"Gets Alerts"},{key:"canReport",label:"View Reports"},{key:"canAttendance",label:"Take Attendance"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
       const sel=es[f.key]===true;
+      const protectedAdmin=f.key==="isAdmin"&&es.authUid===S.user.uid&&sel;
       const b=btn({flex:"1",padding:"8px 4px",border:"2px solid "+(sel?C.green:C.border),
         borderRadius:"8px",background:sel?C.green+"22":C.surface,
         color:sel?C.green:C.muted,fontWeight:"700",fontSize:"11px"},
-        (sel?"✓ ":"")+f.label,()=>{es[f.key]=!sel;ss({editingStaff:{...es}});});
+        (sel?"✓ ":"")+f.label,()=>{
+          if(protectedAdmin){toast("Transfer admin access in Firebase Console before removing your own admin role.");return;}
+          es[f.key]=!sel;ss({editingStaff:{...es}});
+        });
       fr.appendChild(b);
     });
     card.appendChild(fr);
@@ -1556,16 +1660,26 @@ function renderAdminStaff(bdy){
     const ar=div({display:"flex",gap:"8px"});
     ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",
       color:"#000",fontWeight:"800",fontSize:"14px",padding:"12px"},"Save",async()=>{
-      if(!es.name||!es.pin){toast("Name and PIN required");return;}
-      if(String(es.pin).length!==4){toast("PIN must be 4 digits");return;}
-      await fbSaveStaff(es._key,{
-        name:String(es.name),pin:String(es.pin),role:String(es.role||""),
-        wa:String(es.wa||""),forms:toStr(es.forms)||"",
-        alerts:!!es.alerts,reports:!!es.reports,canReport:!!es.canReport,
-        canAttendance:!!es.canAttendance,
-        isAdmin:!!es.isAdmin,lang:es.lang||"en",shift:es.shift||null
-      });
-      ss({editingStaff:null});toast("✓ Staff saved");
+      if(!es.name){toast("Name is required");return;}
+      if(!es._key&&!es.authUid){toast("Create the Firebase account and enter its UID first");return;}
+      if(es.authUid&&!/^[A-Za-z0-9_-]{20,}$/.test(es.authUid)){toast("Enter a valid Firebase Authentication UID");return;}
+      if(es._key===S.user._key&&es.authUid!==S.user.uid){toast("You cannot change the Firebase UID of your signed-in account.");return;}
+      if(es.authUid&&FB_STAFF.some(staff=>staff._key!==es._key&&staff.authUid===es.authUid)){
+        toast("This Firebase UID is already linked to another staff profile.");return;
+      }
+      try{
+        await fbSaveStaff(es._key,{
+          name:String(es.name),authUid:String(es.authUid||""),role:String(es.role||""),
+          wa:String(es.wa||""),forms:toStr(es.forms)||"",
+          alerts:!!es.alerts,reports:!!es.reports,canReport:!!es.canReport,
+          canAttendance:!!es.canAttendance,
+          isAdmin:!!es.isAdmin,lang:es.lang||"en",shift:es.shift||null
+        });
+        ss({editingStaff:null});toast("✓ Staff and access profile saved");
+      }catch(error){
+        console.error("Staff save failed:",error);
+        toast("⚠ Staff save failed. Check Firebase permissions and try again.",4000);
+      }
     }));
     ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
       borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
@@ -1578,7 +1692,7 @@ function renderAdminStaff(bdy){
       borderRadius:"12px",padding:"14px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"12px"});
     const info=div({flex:"1"});
     info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},s.name+(s.isAdmin?" ⚙":"")+(s.canReport?" 📊":"")));
-    info.appendChild(div({fontSize:"12px",color:C.muted},s.role+" · PIN: "+s.pin));
+    info.appendChild(div({fontSize:"12px",color:C.muted},s.role+(s.authUid?" · Firebase account linked":" · No Firebase account linked")));
     info.appendChild(div({fontSize:"11px",color:C.amber,marginTop:"2px"},"Forms: "+(s.forms==="ALL"?"All":toArr(s.forms).join(", ")||"None")));
     card.appendChild(info);
     const ab=div({display:"flex",gap:"6px",flexShrink:"0"});
@@ -1630,8 +1744,12 @@ function renderAdminForms(bdy){
       fontWeight:"800",fontSize:"14px",padding:"12px"},"Save Form",async()=>{
       const fname=ef.name||ef._origName;
       if(!fname){toast("Form name required");return;}
-      await fbSaveFormMeta(fname,{icon:ef.icon||"📝",color:ef.color||C.blue,desc:ef.desc||"",builtin:false});
-      ss({editingFormMeta:null});toast("✓ Form saved");
+      try{
+        await fbSaveFormMeta(fname,{icon:ef.icon||"📝",color:ef.color||C.blue,desc:ef.desc||"",builtin:false});
+        ss({editingFormMeta:null});toast("✓ Form saved");
+      }catch(error){
+        console.error("Form save failed:",error);toast("⚠ Form save failed. Check Firebase permissions.",4000);
+      }
     }));
     ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
       borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
@@ -1656,7 +1774,11 @@ function renderAdminForms(bdy){
       ()=>ss({editingFormMeta:{...m,_origName:fname,name:fname}})));
     if(!m.builtin) ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",
       color:C.red,borderRadius:"8px",padding:"6px 10px",fontSize:"12px"},"✕",
-      async()=>{if(confirm("Delete form "+fname+"?")){await fbDeleteFormMeta(fname);render();}}));
+      async()=>{
+        if(!confirm("Delete form "+fname+"?")) return;
+        try{await fbDeleteFormMeta(fname);render();}
+        catch(error){console.error("Form delete failed:",error);toast("⚠ Form could not be deleted.",4000);}
+      }));
     card.appendChild(ab);bdy.appendChild(card);
   });
 }
@@ -1710,7 +1832,8 @@ function renderAdminFields(bdy){
     ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",color:"#000",
       fontWeight:"800",fontSize:"14px",padding:"12px"},"Save Field",async()=>{
       if(!ef.label){toast("Field label required");return;}
-      await fbSaveField(fn,ef);ss({editingField:null});toast("✓ Field saved");
+      try{await fbSaveField(fn,ef);ss({editingField:null});toast("✓ Field saved");}
+      catch(error){console.error("Field save failed:",error);toast("⚠ Field save failed. Check Firebase permissions.",4000);}
     }));
     ar.appendChild(btn({flex:"1",background:C.surface,border:"1px solid "+C.border,
       borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"14px",padding:"12px"},
@@ -1740,10 +1863,14 @@ function renderAdminFields(bdy){
         ()=>ss({editingField:{...f}})));
       ab.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
         borderRadius:"8px",padding:"5px 9px",fontSize:"11px"},"✕",
-        async()=>{if(confirm("Delete field?")){await fbDeleteField(fn,f._key);render();}}));
+        async()=>{
+          if(!confirm("Delete field?")) return;
+          try{await fbDeleteField(fn,f._key);render();}
+          catch(error){console.error("Field delete failed:",error);toast("⚠ Field could not be deleted.",4000);}
+        }));
       c.appendChild(ab);fieldsArea.appendChild(c);
     });
-  }).catch(e=>console.error("Fields load error:",e));
+  }).catch(e=>{console.error("Fields load error:",e);toast("⚠ Custom fields could not be loaded.",4000);});
 }
 
 // ── FORM FILLING ──────────────────────────────────────────────────────────────
@@ -1811,7 +1938,7 @@ function appendCustomFields(bdy,fn){
       return makeText(f.label,f.hint||"","",gf(f.label),v=>sf(f.label,v));
     }
     fields.forEach(f=>placeholder.appendChild(renderField(f)));
-  }).catch(e=>console.error("Custom fields error:",e));
+  }).catch(e=>{console.error("Custom fields error:",e);toast("⚠ Custom fields could not be loaded.",4000);});
 }
 
 function renderCustomForm(bdy,meta,fn){
@@ -1836,6 +1963,9 @@ function renderCustomForm(bdy,meta,fn){
       await trySave(fn,()=>fbAddLog(fn,entry),()=>{clearDraft(fn);toast("✓ "+fn+" submitted!");ss({screen:"home"});});
     }));
     bdy.appendChild(div({height:"40px"}));
+  }).catch(error=>{
+    console.error("Custom form fields load failed:",error);
+    toast("⚠ Form fields could not be loaded. Check Firebase rules.",4000);
   });
 }
 
@@ -3764,7 +3894,7 @@ function sendDailyReport(){
   });
   if(!total) msg+="No submissions today.\n";
   msg+="\n━━━━━━━━━━━━━━━━━━━━━━\n_RF Factory Forms App_";
-  const recv=getStaff().filter(s=>s.reports||s.isAdmin);
+  const recv=Object.values(FB_ALERT_RECIPIENTS).filter(r=>r.reports);
   recv.forEach((r,i)=>setTimeout(()=>sendWA(r.wa,msg),i*1500));
   toast("📊 Report sent!");
 }
@@ -3782,6 +3912,7 @@ function render(){
     switch(S.screen){
       case "loading":  screen=renderLoading(); break;
       case "login":    screen=renderLogin(); break;
+      case "authError": screen=renderAuthError(); break;
       case "home":     screen=renderHome(); break;
       case "form":     screen=renderForm(); break;
       case "attendance": screen=renderAttendance(); break;
@@ -3806,32 +3937,8 @@ function render(){
   }
 }
 
-// ── AUTO-LOCK ON INACTIVITY ─────────────────────────────────────────────────
-const INACTIVITY_LOCK_MS=3*60*1000; // 3 minutes — change this number to adjust the timeout
-let inactivityTimer=null;
-function resetInactivityTimer(){
-  if(inactivityTimer) clearTimeout(inactivityTimer);
-  inactivityTimer=setTimeout(()=>{
-    if(S.user&&S.screen!=="login"&&S.screen!=="attendance"){
-      ss({screen:"login",user:null,pin:"",pinError:false});
-      toast("🔒 Locked due to inactivity — enter PIN to continue",3000);
-    }
-  },INACTIVITY_LOCK_MS);
-}
-["click","touchstart","keydown","mousemove","scroll"].forEach(evt=>{
-  document.addEventListener(evt,resetInactivityTimer,{passive:true});
-});
-resetInactivityTimer();
-
 // ── INIT ──────────────────────────────────────────────────────────────────────
-render(); // show loading screen immediately
-fbInit().catch(e=>{
-  console.error("Firebase init failed:",e);
-  FB_READY=true;
-  S.screen="login";
-  render();
-});
-notifyPendingSubmissions();
+render();
 </script>
 </body>
 </html>

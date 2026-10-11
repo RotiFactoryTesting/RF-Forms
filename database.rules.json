@@ -1,0 +1,63 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "access": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('access').child(auth.uid).child('isAdmin').val() === true)",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true && (auth.uid !== $uid || (newData.exists() && newData.child('isAdmin').val() === true))"
+      }
+    },
+    "staff": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true",
+      "$staffKey": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('staffKey').val() === $staffKey)"
+      }
+    },
+    "forms_meta": {
+      ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "custom_fields": {
+      ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "alert_recipients": {
+      ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "submissions": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canReport').val() === true)",
+      "$form": {
+        ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canReport').val() === true || ((query.orderByChild === 'uid' && query.equalTo === auth.uid) && (root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true)))",
+        ".indexOn": ["uid"],
+        "$entry": {
+          ".write": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || ((root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true) && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && (!newData.exists() || newData.child('uid').val() === auth.uid)))))"
+        }
+      }
+    },
+    "attendance_staff": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canAttendance').val() === true)",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "attendance_machines": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canAttendance').val() === true)",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "attendance": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canAttendance').val() === true)",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canAttendance').val() === true)"
+    },
+    "attendance_settings": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true",
+      ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
+    },
+    "drafts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
+        ".write": "auth != null && auth.uid === $uid && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true"
+      }
+    }
+  }
+}

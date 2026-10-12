@@ -1355,7 +1355,6 @@ function appendAttendanceTable(bdy,date,canEdit,type="staff"){
 function renderAttendance(){
   const date=todayKey();
   if(!S.user||(S.user&&!S.user.isAdmin&&!S.user.canAttendance)) return renderHome();
-  resetInactivityTimer();
   const w=div({minHeight:"100vh",background:C.bg});
   w.appendChild(makeHdr("✓ Staff & Machine Attendance",S.user.name,[],()=>ss({screen:"home"}),"← Home"));
   const bdy=wrap();

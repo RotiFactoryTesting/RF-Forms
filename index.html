@@ -982,6 +982,7 @@ function fieldWrap(label,hint){
 }
 
 function makeDropdown(label,hint,options,value,onChange,allowOther){
+  if(!allowOther&&options.length<=5)return makeToggle(label,hint,options,value,onChange);
   const w=fieldWrap(label,hint);
   const wrap2=div({position:"relative"});
   const sel=el("select",{width:"100%",background:"#1e1b18",
@@ -1025,11 +1026,12 @@ function makeDropdown(label,hint,options,value,onChange,allowOther){
 
 function makeToggle(label,hint,options,value,onChange,critFn){
   const w=fieldWrap(label,hint);
-  const row=div({display:"flex",gap:"7px",flexWrap:options.length>4?"wrap":"nowrap"});
+  const columns=options.length===1?1:2;
+  const row=div({display:"grid",gridTemplateColumns:"repeat("+columns+",minmax(0,1fr))",gap:"7px"});
   const btns=[];
-  options.forEach(opt=>{
+  options.forEach((opt,index)=>{
     const bad=critFn&&critFn(opt),col=bad?C.red:C.green,sel=value===opt;
-    const b=btn({flex:options.length>4?"0 0 calc(50% - 4px)":"1",padding:"11px 4px",
+    const b=btn({width:"100%",minHeight:"44px",padding:"11px 8px",
       border:"2px solid "+(sel?col:C.border),borderRadius:"10px",
       background:sel?col+"25":C.surface,color:sel?col:C.muted,
       fontWeight:"700",fontSize:"14px",textAlign:"center"},opt,()=>{
@@ -1041,6 +1043,7 @@ function makeToggle(label,hint,options,value,onChange,critFn){
         bb.style.color=s?bc:C.muted;
       });
     });
+    if(options.length>2&&options.length%2===1&&index===options.length-1)b.style.gridColumn="1 / -1";
     btns.push({b,o:opt});row.appendChild(b);
   });
   w.appendChild(row);return w;
@@ -2093,7 +2096,7 @@ function renderOperationalForm(bdy,meta,fn){
   const date=()=>bdy.appendChild(makeDate("Date",value("date"),v=>put("date",v)));
   const text=(label,key,placeholder="",rows)=>bdy.appendChild(makeText(label,"",placeholder,value(key),v=>put(key,v),rows));
   const number=(label,key,unit="",hint="")=>bdy.appendChild(makeNumber(label,hint,unit,value(key),v=>put(key,v)));
-  const choice=(label,key,options)=>bdy.appendChild(makeDropdown(label,"",options,value(key),v=>put(key,v)));
+  const choice=(label,key,options)=>bdy.appendChild(makeToggle(label,"",options,value(key),v=>put(key,v)));
   const heading=(label,icon)=>bdy.appendChild(secHdr(label,meta.color,icon));
   const submit=()=>{
     bdy.appendChild(submitBtn("Save "+fn,meta.color,async()=>{
@@ -2153,14 +2156,9 @@ function renderOperationalForm(bdy,meta,fn){
         String(index+1).padStart(2,"0")+" · "+area));
       card.appendChild(div({fontSize:"12px",color:C.text,lineHeight:"1.4",marginBottom:"9px"},activity));
       card.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.4",marginBottom:"9px"},"Acceptance: "+CLEANING_ACCEPTANCE[index]));
-      const status=el("select",{width:"100%",background:C.dark,border:"1px solid "+C.border,borderRadius:"8px",
-        color:C.text,padding:"9px",marginBottom:"8px"});
-      ["","OK","Not OK","N/A"].forEach(option=>{
-        const o=document.createElement("option");o.value=option;o.textContent=option||"Select status";
-        if(item.status===option)o.selected=true;status.appendChild(o);
-      });
-      status.addEventListener("change",()=>{checks[index]={...checks[index],status:status.value};put("checks",checks);});
-      card.appendChild(status);
+      card.appendChild(makeToggle("Status","",["OK","Not OK","N/A"],item.status,selected=>{
+        checks[index]={...checks[index],status:selected};put("checks",checks);
+      },option=>option==="Not OK"));
       const fields=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"});
       [["Corrective action / remarks","remarks","text"],["Checked by","checkedBy","text"],
         ["Time","time","time"],["Verified by","verifiedBy","text"]].forEach(([label,key,type])=>{

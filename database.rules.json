@@ -16,11 +16,11 @@
       }
     },
     "forms_meta": {
-      ".read": "auth != null && (auth.token.firebase.sign_in_provider === 'anonymous' || (root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true))",
+      ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
       ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
     },
     "custom_fields": {
-      ".read": "auth != null && (auth.token.firebase.sign_in_provider === 'anonymous' || (root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true))",
+      ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
       ".write": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && root.child('access').child(auth.uid).child('isAdmin').val() === true"
     },
     "alert_recipients": {
@@ -30,10 +30,10 @@
     "submissions": {
       ".read": "auth != null && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canReport').val() === true)",
       "$form": {
-        ".read": "auth != null && ((root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canReport').val() === true || ((query.orderByChild === 'uid' && query.equalTo === auth.uid) && (root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true)))) || (auth.token.firebase.sign_in_provider === 'anonymous' && query.orderByChild === 'uid' && query.equalTo === auth.uid))",
+        ".read": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || root.child('access').child(auth.uid).child('canReport').val() === true || ((query.orderByChild === 'uid' && query.equalTo === auth.uid) && (root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true)))",
         ".indexOn": ["uid"],
         "$entry": {
-          ".write": "auth != null && ((root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || ((root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true) && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && (!newData.exists() || newData.child('uid').val() === auth.uid)))))) || (auth.token.firebase.sign_in_provider === 'anonymous' && !data.exists() && newData.child('uid').val() === auth.uid))"
+          ".write": "auth != null && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true && (root.child('access').child(auth.uid).child('isAdmin').val() === true || ((root.child('access').child(auth.uid).child('forms').val() === 'ALL' || root.child('access').child(auth.uid).child('formAccess').child($form).val() === true) && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && (!newData.exists() || newData.child('uid').val() === auth.uid)))))"
         }
       }
     },
@@ -55,8 +55,8 @@
     },
     "drafts": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid && (auth.token.firebase.sign_in_provider === 'anonymous' || (root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true))",
-        ".write": "auth != null && auth.uid === $uid && (auth.token.firebase.sign_in_provider === 'anonymous' || (root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true))"
+        ".read": "auth != null && auth.uid === $uid && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true",
+        ".write": "auth != null && auth.uid === $uid && root.child('access').child(auth.uid).exists() && root.child('access').child(auth.uid).child('disabled').val() !== true"
       }
     }
   }

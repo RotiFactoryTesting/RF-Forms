@@ -44,7 +44,7 @@ select option{background:#1e1b18!important;color:#F0EDE8!important;}
 <div id="app"></div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,signInAnonymously,sendPasswordResetEmail,signOut,browserLocalPersistence,setPersistence}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,sendPasswordResetEmail,signOut,browserLocalPersistence,setPersistence}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import{getDatabase,ref,set,get,push,onValue,remove,update,query,orderByChild,equalTo}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
@@ -447,29 +447,15 @@ function profileSetupError(message){
   const error=new Error(message);error.code="rf/profile";return error;
 }
 
-function startGuestSession(firebaseUser){
-  const sessionId=++AUTH_SESSION_ID;
-  stopFirebaseListeners();
-  S.user={
-    name:localStorage.getItem("rf_guest_name")||"Operator",
-    role:"Operator",forms:"ALL",alerts:false,reports:false,canReport:false,
-    canAttendance:false,isAdmin:false,isGuest:true,lang:"en",
-    uid:firebaseUser.uid,email:null,_key:null
-  };
-  S.screen="home";S.authError="";
-  listen("forms_meta",value=>{
-    FB_FORMS_META=value||{};
-    listenToOwnSubmissions();
-    if(FB_READY) render();
-  },"Forms");
-  listenToOwnSubmissions();
-  FB_READY=true;
-  if(sessionId===AUTH_SESSION_ID){render();notifyPendingSubmissions();}
-}
-
 onAuthStateChanged(auth,firebaseUser=>{
-  if(firebaseUser&&firebaseUser.isAnonymous) startGuestSession(firebaseUser);
-  else if(firebaseUser) startAuthenticatedSession(firebaseUser);
+  if(firebaseUser?.isAnonymous){
+    AUTH_SESSION_ID++;
+    stopFirebaseListeners();
+    S.user=null;S.authBusy=false;S.screen="login";
+    S.authError="Password-free access is no longer available. Sign in with your assigned work email and password.";
+    render();
+    signOut(auth).catch(error=>console.error("Could not clear an old anonymous session:",error));
+  }else if(firebaseUser) startAuthenticatedSession(firebaseUser);
   else{
     AUTH_SESSION_ID++;
     stopFirebaseListeners();
@@ -808,7 +794,6 @@ const S={
   screen:"loading",
   user:null,
   loginEmail:"",
-  guestName:"",
   authError:"",
   authBusy:false,
   // form filling
@@ -1255,40 +1240,7 @@ function renderLogin(){
   card.appendChild(div({fontSize:"24px",fontWeight:"800",textAlign:"center",marginBottom:"5px"},"RF Forms"));
   card.appendChild(div({fontSize:"14px",color:C.muted,textAlign:"center",marginBottom:"26px"},"RF Factory · Dehradun"));
   card.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",textAlign:"center",marginBottom:"16px"},
-    "Start filling forms without creating a password. Your entries stay linked to this device."));
-  const guestName=el("input",{marginBottom:"10px"},null,{
-    type:"text",name:"operator",autocomplete:"name",placeholder:"Your name",required:"required",
-    maxlength:"80",class:"login-field"
-  });
-  guestName.value=S.guestName||localStorage.getItem("rf_guest_name")||"";
-  guestName.addEventListener("input",e=>{S.guestName=e.target.value;});
-  card.appendChild(guestName);
-  const guestButton=btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
-    color:"#07140F",fontSize:"15px",fontWeight:"800",padding:"14px",
-    boxShadow:"0 8px 24px rgba(45,212,160,.14)"},"Continue without password",async()=>{
-    if(S.authBusy)return;
-    const name=guestName.value.trim();
-    if(!name){S.guestName="";S.authError="Enter your name to continue.";render();return;}
-    S.authBusy=true;S.authError="";guestButton.disabled=true;guestButton.textContent="Opening forms…";
-    try{
-      localStorage.setItem("rf_guest_name",name);
-      await setPersistence(auth,browserLocalPersistence);
-      await signInAnonymously(auth);
-    }catch(error){
-      console.error("Password-free sign in failed:",error);
-      S.authError=error.code==="auth/operation-not-allowed"?
-        "Password-free access is not enabled in Firebase yet. Ask the administrator to enable Anonymous sign-in.":
-        "Could not connect. Check your internet connection and try again.";
-      S.authBusy=false;render();
-    }
-  });
-  guestButton.disabled=!!S.authBusy;
-  card.appendChild(guestButton);
-  card.appendChild(div({display:"flex",alignItems:"center",gap:"10px",margin:"20px 0 16px",color:C.muted,fontSize:"11px"},[
-    div({height:"1px",background:C.border,flex:"1"}),
-    span({},"ADMINISTRATOR / STAFF SIGN IN"),
-    div({height:"1px",background:C.border,flex:"1"})
-  ]));
+    "Sign in with your assigned work account to access RF Forms."));
   const email=el("input",{marginBottom:"12px"},null,{
     type:"email",name:"username",autocomplete:"username",placeholder:"Work email",required:"required",
     inputmode:"email",autocapitalize:"none",spellcheck:"false",class:"login-field"
@@ -1381,17 +1333,6 @@ function renderHome(){
     border:"1px solid rgba(240,165,0,0.4)",borderRadius:"8px",color:C.amber,
     padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"⚙ Admin",
     ()=>ss({screen:"admin",adminTab:"staff",editingStaff:null,editingFormMeta:null,editingField:null,editingFieldForm:null})));
-  if(u.isGuest) hBtns.push(btn({background:C.surface,border:"1px solid "+C.border,
-    borderRadius:"8px",color:C.text,padding:"7px 10px",fontSize:"12px",fontWeight:"700"},
-    "Change name",()=>{
-      const name=prompt("Enter the operator name for this device:",u.name);
-      if(name===null)return;
-      if(!name.trim()){toast("Name cannot be empty");return;}
-      try{
-        localStorage.setItem("rf_guest_name",name.trim());
-        S.user={...S.user,name:name.trim()};render();
-      }catch(error){console.error("Operator name update failed:",error);toast("Could not save the operator name.",3500);}
-    }));
   if(u.canReport||u.isAdmin) hBtns.push(btn({background:"rgba(45,212,160,0.12)",
     border:"1px solid rgba(45,212,160,0.4)",borderRadius:"8px",color:C.green,
     padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"📊 Reports",
@@ -3332,7 +3273,7 @@ function renderHistory(){
         top.appendChild(left);
         const rb=div({display:"flex",gap:"6px",flexShrink:"0",alignItems:"center"});
         rb.appendChild(span({fontSize:"12px",color:C.muted},"View →"));
-        if(!S.user.isGuest) rb.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
+        rb.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
           borderRadius:"6px",padding:"4px 8px",fontSize:"12px"},"✕",
           e=>{e.stopPropagation();if(confirm("Delete?"))fbDelLog(fn,log._key);}));
         top.appendChild(rb);card.appendChild(top);bdy.appendChild(card);

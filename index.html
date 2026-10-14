@@ -44,7 +44,7 @@ select option{background:#1e1b18!important;color:#F0EDE8!important;}
 <div id="app"></div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,sendPasswordResetEmail,signOut,browserLocalPersistence,setPersistence}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,signInAnonymously,sendPasswordResetEmail,signOut,browserLocalPersistence,setPersistence}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import{getDatabase,ref,set,get,push,onValue,remove,update,query,orderByChild,equalTo}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
@@ -113,6 +113,100 @@ const ICON_OPTS=["◉","📋","🐛","🔩","👷","🧹","⚙","🔴","🔧","�
 const COLOR_OPTS=["#F0A500","#38A8E8","#2DD4A0","#A855F7","#14B8A6","#F97316","#E85C38","#EC4899","#6366F1","#84CC16"];
 const FIELD_TYPES=["text","number","dropdown","toggle","multi_select","rating5","date","time"];
 const FIELD_TYPE_LABELS={text:"Text / Notes",number:"Number",dropdown:"Dropdown",toggle:"Toggle buttons",multi_select:"Multi-select",rating5:"Rating 1–5",date:"Date picker",time:"Time input"};
+const GROOMING_TEMPLATE_PARAMS=[
+  "Hair caps - no long hair","Nails Trimmed","Clean appearance","Clean Clothes",
+  "No Jewellery","No Bindis","No eatables in plant","No gutka, masala, tobacco",
+  "Gloves while working","No beards/ facial hair","Scheduled Hand wash","No open cuts/ wounds"
+];
+const GROOMING_TEMPLATE_HI=[
+  "हेयर कैप - लंबे बाल नहीं","नाखून काटे गए","साफ़ दिखावट","साफ कपड़े","कोई आभूषण नहीं",
+  "कोई बिंदी नहीं","प्लांट में खाने का कोई सामान नहीं","गुटखा, मसाला, तम्बाकू नहीं",
+  "काम करते समय दस्ताने","कोई दाढ़ी/चेहरे पर बाल नहीं","अनुसूचित हाथ धोना","कोई खुला कट/घाव नहीं"
+];
+const CLEANING_CHECKS=[
+  ["Before production","Raw material / atta storage","Check atta bags, bag condition, labels and storage area"],
+  ["Before production","Atta availability","Record atta type/lot and quantity available for planned production"],
+  ["Before production","Oil storage / dispensing area","Check oil container, lid, label and surrounding area"],
+  ["Before production","Gas supply / manifold / hose","Check gas availability, hose and connections for visible damage/leak indication"],
+  ["Before production","Water tank / water supply","Check tank cover, cleanliness and water availability; record tank level/status"],
+  ["Before production","Dough mixer / kneader","Clean and inspect bowl, blades/hooks, guards and external surfaces"],
+  ["Before production","Dough table / work surface","Clean and sanitize food-contact surface as per approved procedure"],
+  ["Before production","Dough tubs / trays / utensils","Clean and inspect tubs, trays, scoops and utensils"],
+  ["Before production","Conveyor belt","Clean belt top, underside/access points where safe; check belt condition and alignment"],
+  ["Before production","Roti cooking equipment / hot plate","Remove residue from accessible surfaces; inspect cooking surface"],
+  ["Before production","Sorting table","Clean and sanitize table and edges"],
+  ["Before production","Cooling area / cooling racks","Clean racks, trays and surrounding surfaces"],
+  ["Before production","Packing table / packing area","Clean and sanitize packing surface; remove unrelated items"],
+  ["Before production","Metal detector / inspection point","Clean external surfaces and conveyor contact area; verify status per SOP"],
+  ["Before production","Floor / drains","Sweep and clean floor; check drains and remove standing water"],
+  ["Before production","Waste bins","Check bin cleanliness, liner and lid/condition"],
+  ["Before production","Cleaning tools / chemicals","Check tools are clean, identified and stored separately from food/packaging"],
+  ["During production","Dough mixer / dough handling","Check for dough build-up and clean spills when safe; record any cleaning"],
+  ["During production","Conveyor belt","Check belt for dough/atta build-up, damage and alignment"],
+  ["During production","Dough / sorting / packing tables","Remove spills and loose atta; clean/sanitize as required between tasks or contamination events"],
+  ["During production","Floor / waste bins","Remove spills promptly; empty bins when needed"],
+  ["After production","Dough mixer / kneader","Switch off/isolate as required; remove dough; wash/clean bowl, attachments and exterior"],
+  ["After production","Dough tables / tubs / trays / utensils","Remove residue; wash, rinse and sanitize as per approved procedure; air-dry/store"],
+  ["After production","Conveyor belt","Clean belt and accessible contact parts following safe shutdown procedure"],
+  ["After production","Cooking equipment / hot plate","Clean accessible surfaces after safe cooling/shutdown"],
+  ["After production","Sorting table / cooling racks","Clean and sanitize food-contact surfaces and racks"],
+  ["After production","Packing table / packing area","Remove crumbs and packaging waste; clean and sanitize table"],
+  ["After production","Metal detector / conveyor inspection point","Clean accessible surfaces according to equipment instructions"],
+  ["After production","Floor / drains","Remove food waste and atta; wash/clean floor and drains as per schedule"],
+  ["After production","Waste bins","Empty, clean and return bins to designated location"],
+  ["End of day","Water tank / water point","Check tank cover and external cleanliness; record any cleaning or issue"],
+  ["End of day","Atta / oil storage","Close and store raw materials correctly; record stock/lot issues as applicable"],
+  ["End of day","Gas supply","Close gas supply as per site safety procedure; report defects"],
+  ["End of day","Cleaning tools / chemicals","Wash tools, dry and store in designated area; secure chemicals"],
+  ["End of day","General production area","Check all listed areas are clean, waste removed and equipment left safe"]
+];
+const CLEANING_ACCEPTANCE=[
+  "Bags intact, identified, dry; area clean; no pest activity",
+  "Required quantity available; lot/stock details recorded",
+  "Container clean, closed, identified; no leakage",
+  "Gas available; no visible damage or suspected leakage; escalate any concern",
+  "Tank covered and clean; adequate water available",
+  "No dough residue, flour build-up, foreign matter or damage",
+  "Surface visibly clean, dry and ready for food contact",
+  "No residue, dirt, rust, cracks or foreign matter",
+  "No dough/atta residue; belt intact and correctly aligned",
+  "Surface clean; equipment safe and ready",
+  "No flour, dough, oil, dust or foreign matter",
+  "Clean, dry and protected from contamination",
+  "Clean and dry; packaging protected and area orderly",
+  "Clean; operational checks completed and recorded separately",
+  "Floor clean; no standing water or accumulated waste",
+  "Bin clean, not overflowing and positioned appropriately",
+  "Tools serviceable; chemicals labelled and safely stored",
+  "No avoidable accumulation; cleaning does not contaminate product",
+  "Belt clean enough for hygienic operation; aligned and intact",
+  "Surfaces maintained clean; product protected",
+  "No unsafe spills; bins not overflowing",
+  "No dough residue; cleaned and left in safe condition",
+  "Clean, sanitized where required, dry and protected",
+  "No visible dough/atta residue; belt left clean",
+  "No food residue or grease build-up",
+  "No residue; dry and ready for next use",
+  "No crumbs, dust, oil or waste",
+  "Clean; no water/chemical ingress into equipment",
+  "Floor and drains clean; no standing water",
+  "Bins clean; waste disposed of appropriately",
+  "Covered and clean; issues reported",
+  "Materials protected, identified and stored off floor as applicable",
+  "Supply safely shut down as required; no unresolved defect",
+  "Tools clean and stored separately; chemicals secured",
+  "Area clean and orderly; any pending action documented"
+];
+const LUX_AREAS=[
+  ["Raw material / flour storage",150,200,"General storage area"],
+  ["Dough mixing / kneading area",200,300,"General manufacturing"],
+  ["Dough table",300,500,"Fine manufacturing work"],
+  ["Conveyor belt area",200,300,"General manufacturing"],
+  ["Sorting table",300,500,"Fine work / inspection-adjacent"],
+  ["Cooling & Packing table",500,750,"Fine inspection work"],
+  ["Metal Detector/ Dispatch table",150,200,"General storage area"]
+];
+const TEMPERATURE_SLOTS=["5-6 AM","6-7 AM","7-8 AM","8-9 AM","9-10 AM","10-11 AM","11-12 PM","12-13 PM"];
 
 
 // ── HINDI TRANSLATIONS ────────────────────────────────────────────────────────
@@ -191,6 +285,13 @@ const DEFAULT_FORMS_META={
   "Delivery Checklist":{icon:"🚚",color:"#2DD4A0",desc:"Delivery dispatch check",builtin:true},
   "Visitor Log":{icon:"🪪",color:"#A855F7",desc:"Gate visitor entry",builtin:true},
   "Equipment Service Record":{icon:"📅",color:"#14B8A6",desc:"Equipment service history",builtin:true},
+  "Flour Receiving Register":{icon:"🌾",color:"#D4A017",desc:"Wheat flour receipt and sensory checks",builtin:true},
+  "Cleaning Checklist":{icon:"🧽",color:"#38A8E8",desc:"35-step cleaning and pre-operation checklist",builtin:true},
+  "Customer Complaints & Feedback":{icon:"📣",color:"#E85C38",desc:"Customer issues, actions and closure tracking",builtin:true},
+  "Lux Level Report":{icon:"💡",color:"#A855F7",desc:"Site lighting measurements by work area",builtin:true},
+  "Product Temperature Report":{icon:"🌡",color:"#F97316",desc:"Hourly roti temperatures by table",builtin:true},
+  "Cloth Wash & Sanitation Log":{icon:"🧺",color:"#14B8A6",desc:"Cloth washing and sanitation records",builtin:true},
+  "Flour Sieving Log":{icon:"⚖",color:"#2DD4A0",desc:"Flour batch sieving run register",builtin:true},
 };
 
 // ── FIREBASE STATE ────────────────────────────────────────────────────────────
@@ -346,8 +447,29 @@ function profileSetupError(message){
   const error=new Error(message);error.code="rf/profile";return error;
 }
 
+function startGuestSession(firebaseUser){
+  const sessionId=++AUTH_SESSION_ID;
+  stopFirebaseListeners();
+  S.user={
+    name:localStorage.getItem("rf_guest_name")||"Operator",
+    role:"Operator",forms:"ALL",alerts:false,reports:false,canReport:false,
+    canAttendance:false,isAdmin:false,isGuest:true,lang:"en",
+    uid:firebaseUser.uid,email:null,_key:null
+  };
+  S.screen="home";S.authError="";
+  listen("forms_meta",value=>{
+    FB_FORMS_META=value||{};
+    listenToOwnSubmissions();
+    if(FB_READY) render();
+  },"Forms");
+  listenToOwnSubmissions();
+  FB_READY=true;
+  if(sessionId===AUTH_SESSION_ID){render();notifyPendingSubmissions();}
+}
+
 onAuthStateChanged(auth,firebaseUser=>{
-  if(firebaseUser) startAuthenticatedSession(firebaseUser);
+  if(firebaseUser&&firebaseUser.isAnonymous) startGuestSession(firebaseUser);
+  else if(firebaseUser) startAuthenticatedSession(firebaseUser);
   else{
     AUTH_SESSION_ID++;
     stopFirebaseListeners();
@@ -427,7 +549,7 @@ function setLocalFormsMetaOverride(name,data){
   }catch(e){console.error(e);}
 }
 function getFormsMeta(){
-  const base=Object.keys(FB_FORMS_META).length?FB_FORMS_META:DEFAULT_FORMS_META;
+  const base={...DEFAULT_FORMS_META,...FB_FORMS_META};
   const overrides=getLocalFormsMetaOverrides();
   if(!Object.keys(overrides).length) return base;
   const merged={...base};
@@ -686,6 +808,7 @@ const S={
   screen:"loading",
   user:null,
   loginEmail:"",
+  guestName:"",
   authError:"",
   authBusy:false,
   // form filling
@@ -1131,8 +1254,41 @@ function renderLogin(){
     margin:"0 auto 16px",color:"#000",boxShadow:"0 8px 24px rgba(240,165,0,.2)"},"◉"));
   card.appendChild(div({fontSize:"24px",fontWeight:"800",textAlign:"center",marginBottom:"5px"},"RF Forms"));
   card.appendChild(div({fontSize:"14px",color:C.muted,textAlign:"center",marginBottom:"26px"},"RF Factory · Dehradun"));
-  card.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",textAlign:"center",marginBottom:"22px"},
-    "Sign in once on this device. Your secure session will be remembered."));
+  card.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",textAlign:"center",marginBottom:"16px"},
+    "Start filling forms without creating a password. Your entries stay linked to this device."));
+  const guestName=el("input",{marginBottom:"10px"},null,{
+    type:"text",name:"operator",autocomplete:"name",placeholder:"Your name",required:"required",
+    maxlength:"80",class:"login-field"
+  });
+  guestName.value=S.guestName||localStorage.getItem("rf_guest_name")||"";
+  guestName.addEventListener("input",e=>{S.guestName=e.target.value;});
+  card.appendChild(guestName);
+  const guestButton=btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
+    color:"#07140F",fontSize:"15px",fontWeight:"800",padding:"14px",
+    boxShadow:"0 8px 24px rgba(45,212,160,.14)"},"Continue without password",async()=>{
+    if(S.authBusy)return;
+    const name=guestName.value.trim();
+    if(!name){S.guestName="";S.authError="Enter your name to continue.";render();return;}
+    S.authBusy=true;S.authError="";guestButton.disabled=true;guestButton.textContent="Opening forms…";
+    try{
+      localStorage.setItem("rf_guest_name",name);
+      await setPersistence(auth,browserLocalPersistence);
+      await signInAnonymously(auth);
+    }catch(error){
+      console.error("Password-free sign in failed:",error);
+      S.authError=error.code==="auth/operation-not-allowed"?
+        "Password-free access is not enabled in Firebase yet. Ask the administrator to enable Anonymous sign-in.":
+        "Could not connect. Check your internet connection and try again.";
+      S.authBusy=false;render();
+    }
+  });
+  guestButton.disabled=!!S.authBusy;
+  card.appendChild(guestButton);
+  card.appendChild(div({display:"flex",alignItems:"center",gap:"10px",margin:"20px 0 16px",color:C.muted,fontSize:"11px"},[
+    div({height:"1px",background:C.border,flex:"1"}),
+    span({},"ADMINISTRATOR / STAFF SIGN IN"),
+    div({height:"1px",background:C.border,flex:"1"})
+  ]));
   const email=el("input",{marginBottom:"12px"},null,{
     type:"email",name:"username",autocomplete:"username",placeholder:"Work email",required:"required",
     inputmode:"email",autocapitalize:"none",spellcheck:"false",class:"login-field"
@@ -1190,7 +1346,7 @@ function renderLogin(){
     }
   }));
   card.appendChild(div({fontSize:"11px",color:C.muted,textAlign:"center",lineHeight:"1.5",marginTop:"18px"},
-    "Use the email and password provided by your administrator. Passwords are never stored in this app."));
+    "Staff passwords are handled by Firebase Authentication and are never stored in this app."));
   w.appendChild(card);return w;
 }
 
@@ -1225,6 +1381,17 @@ function renderHome(){
     border:"1px solid rgba(240,165,0,0.4)",borderRadius:"8px",color:C.amber,
     padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"⚙ Admin",
     ()=>ss({screen:"admin",adminTab:"staff",editingStaff:null,editingFormMeta:null,editingField:null,editingFieldForm:null})));
+  if(u.isGuest) hBtns.push(btn({background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"8px",color:C.text,padding:"7px 10px",fontSize:"12px",fontWeight:"700"},
+    "Change name",()=>{
+      const name=prompt("Enter the operator name for this device:",u.name);
+      if(name===null)return;
+      if(!name.trim()){toast("Name cannot be empty");return;}
+      try{
+        localStorage.setItem("rf_guest_name",name.trim());
+        S.user={...S.user,name:name.trim()};render();
+      }catch(error){console.error("Operator name update failed:",error);toast("Could not save the operator name.",3500);}
+    }));
   if(u.canReport||u.isAdmin) hBtns.push(btn({background:"rgba(45,212,160,0.12)",
     border:"1px solid rgba(45,212,160,0.4)",borderRadius:"8px",color:C.green,
     padding:"7px 10px",fontSize:"13px",fontWeight:"700"},"📊 Reports",
@@ -1248,6 +1415,10 @@ function renderHome(){
     stats.appendChild(c);
   });
   bdy.appendChild(stats);
+  bdy.appendChild(btn({width:"100%",background:C.blue+"18",border:"1px solid "+C.blue+"55",
+    borderRadius:"12px",color:C.blue,fontWeight:"800",fontSize:"15px",padding:"13px",
+    marginBottom:"16px"},"📄 Choose a form and download by date",
+    ()=>ss({screen:"templateReports",templateForm:"Flour Receiving Register",templatePeriod:"daily",templateDate:todayKey()})));
   if(u.canAttendance||u.isAdmin){
     const attendanceCard=div({background:C.surface,border:"1px solid "+C.green+"55",borderRadius:"14px",
       padding:"16px",marginBottom:"18px",display:"flex",alignItems:"center",gap:"14px",cursor:"pointer"},null,
@@ -1913,8 +2084,15 @@ function renderForm(){
     "Machine Status":renderMachineStatus,"Breakdown Report":renderBreakdown,
     "Maintenance Report":renderMaintenance,"Delivery Checklist":renderDelivery,
     "Visitor Log":renderVisitorLog,"Equipment Service Record":renderEquipService,
+    "Flour Receiving Register":renderOperationalForm,
+    "Cleaning Checklist":renderOperationalForm,
+    "Customer Complaints & Feedback":renderOperationalForm,
+    "Lux Level Report":renderOperationalForm,
+    "Product Temperature Report":renderOperationalForm,
+    "Cloth Wash & Sanitation Log":renderOperationalForm,
+    "Flour Sieving Log":renderOperationalForm,
   };
-  if(map[fn]) map[fn](bdy,meta);
+  if(map[fn]) map[fn](bdy,meta,fn);
   else renderCustomForm(bdy,meta,fn);
   w.appendChild(bdy);return w;
 }
@@ -1966,6 +2144,428 @@ function renderCustomForm(bdy,meta,fn){
     console.error("Custom form fields load failed:",error);
     toast("⚠ Form fields could not be loaded. Check Firebase rules.",4000);
   });
+}
+
+function renderOperationalForm(bdy,meta,fn){
+  const value=k=>gf(k);
+  const put=(k,v)=>{S.fData[k]=v;scheduleDraftSave();};
+  const date=()=>bdy.appendChild(makeDate("Date",value("date"),v=>put("date",v)));
+  const text=(label,key,placeholder="",rows)=>bdy.appendChild(makeText(label,"",placeholder,value(key),v=>put(key,v),rows));
+  const number=(label,key,unit="",hint="")=>bdy.appendChild(makeNumber(label,hint,unit,value(key),v=>put(key,v)));
+  const choice=(label,key,options)=>bdy.appendChild(makeDropdown(label,"",options,value(key),v=>put(key,v)));
+  const heading=(label,icon)=>bdy.appendChild(secHdr(label,meta.color,icon));
+  const submit=()=>{
+    bdy.appendChild(submitBtn("Save "+fn,meta.color,async()=>{
+      const data=JSON.parse(JSON.stringify(S.fData));
+      if(!data.date){toast("Choose a date before saving this record.");return;}
+      const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:fn,
+        user:S.user.name,role:S.user.role,data};
+      await trySave(fn,()=>fbAddLog(fn,entry),()=>{
+        clearDraft(fn);
+        toast("✓ "+fn+" saved");
+        ss({screen:"templateReports",templateForm:fn,templatePeriod:"daily",templateDate:data.date});
+      });
+    }));
+    bdy.appendChild(div({height:"40px"}));
+  };
+
+  date();
+  if(fn==="Flour Receiving Register"){
+    heading("Shipment details","🌾");
+    text("Vehicle Number","vehicle","Vehicle / registration number");
+    text("Supplier Name","supplier","Supplier");
+    text("Site / Location","site","Site or factory location");
+    text("Challan / Invoice No.","invoice","Invoice or challan reference");
+    text("Lot No.","lot","Supplier batch / lot number");
+    const dates=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"});
+    dates.appendChild(makeDate("Manufacturing Date",value("mfgDate"),v=>put("mfgDate",v)));
+    dates.appendChild(makeDate("Expiry Date",value("expiryDate"),v=>put("expiryDate",v)));
+    bdy.appendChild(dates);
+    heading("Sensory evaluation","◉");
+    [["Appearance","appearance"],["Colour","colour"],["Smell / Odour","smell"],["Texture","texture"]]
+      .forEach(([label,key])=>choice(label,key,["OK","Not OK"]));
+    text("Sensory Remarks","sensoryRemarks","Observations");
+    heading("Foreign matter & hygiene","⚠");
+    choice("Foreign Matter","foreignMatter",["Absent","Present"]);
+    choice("Infestation","infestation",["No","Yes"]);
+    choice("Hygiene of Vehicle","vehicleHygiene",["OK","Not OK"]);
+    heading("Decision & sign-off","✓");
+    choice("Decision","decision",["Accept","Reject","Accept with Condition"]);
+    text("Condition (if any)","condition","Required when accepting with a condition");
+    text("QA Sign","qaSign","Name / initials");
+    text("Received By","receivedBy","Receiver name");
+    text("Reviewed By","reviewedBy","Reviewer name");
+    text("Approved By","approvedBy","Approver name");
+  }else if(fn==="Cleaning Checklist"){
+    heading("Shift and production area","🧽");
+    choice("Shift","shift",["Morning","Evening","Night"]);
+    text("Area / Line","areaLine","Production area or line");
+    bdy.appendChild(div({fontSize:"12px",color:C.muted,lineHeight:"1.5",marginBottom:"12px"},
+      "Complete the checks in order. For every Not OK, describe the corrective action and record who checked and verified it."));
+    const checks=Array.isArray(value("checks"))?value("checks"):[];
+    let phase="";
+    CLEANING_CHECKS.forEach(([stage,area,activity],index)=>{
+      if(stage!==phase){phase=stage;heading(stage,"◉");}
+      const item=checks[index]||{};
+      const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"12px",marginBottom:"8px"});
+      card.appendChild(div({fontSize:"12px",fontWeight:"800",color:meta.color,marginBottom:"4px"},
+        String(index+1).padStart(2,"0")+" · "+area));
+      card.appendChild(div({fontSize:"12px",color:C.text,lineHeight:"1.4",marginBottom:"9px"},activity));
+      card.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.4",marginBottom:"9px"},"Acceptance: "+CLEANING_ACCEPTANCE[index]));
+      const status=el("select",{width:"100%",background:C.dark,border:"1px solid "+C.border,borderRadius:"8px",
+        color:C.text,padding:"9px",marginBottom:"8px"});
+      ["","OK","Not OK","N/A"].forEach(option=>{
+        const o=document.createElement("option");o.value=option;o.textContent=option||"Select status";
+        if(item.status===option)o.selected=true;status.appendChild(o);
+      });
+      status.addEventListener("change",()=>{checks[index]={...checks[index],status:status.value};put("checks",checks);});
+      card.appendChild(status);
+      const fields=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px"});
+      [["Corrective action / remarks","remarks","text"],["Checked by","checkedBy","text"],
+        ["Time","time","time"],["Verified by","verifiedBy","text"]].forEach(([label,key,type])=>{
+        const i=inp({width:"100%",background:"rgba(255,255,255,0.07)",border:"1px solid "+C.border,
+          borderRadius:"7px",color:C.text,fontSize:"12px",padding:"8px",outline:"none"},
+          {type,placeholder:label});
+        i.value=item[key]||"";
+        i.addEventListener("input",()=>{checks[index]={...checks[index],[key]:i.value};put("checks",checks);});
+        fields.appendChild(i);
+      });
+      card.appendChild(fields);bdy.appendChild(card);
+    });
+  }else if(fn==="Customer Complaints & Feedback"){
+    heading("Customer and product","📣");
+    text("Unit Name","unitName","Factory / unit name");
+    text("Customer / Shop Name","customer","Customer or shop name");
+    text("Contact No.","contact","Contact number");
+    text("Product","product","Product name");
+    text("Batch / Lot No.","batch","Required for traceability");
+    choice("Type","type",["Complaint","Feedback","Suggestion"]);
+    heading("Details and resolution","⚠");
+    text("Complaint / Feedback Details","details","What was reported?",3);
+    text("Action Taken","action","Investigation, containment, replacement or follow-up",3);
+    text("Handled By","handledBy",S.user.name);
+    choice("Status","status",["Open","In progress","Closed"]);
+    bdy.appendChild(makeDate("Date Closed",value("dateClosed"),v=>put("dateClosed",v)));
+  }else if(fn==="Lux Level Report"){
+    heading("Site measurement details","💡");
+    text("Surveyor Name","surveyor","Person taking the readings");
+    text("Site / Location","location","Site or factory area");
+    heading("Measure each work station","◉");
+    const readings=value("readings")||{};
+    LUX_AREAS.forEach(([area,min,max],index)=>{
+      const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"12px",marginBottom:"8px"});
+      card.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},(index+1)+". "+area));
+      card.appendChild(div({fontSize:"11px",color:C.muted,margin:"4px 0 8px"},"Recommended: "+min+"–"+max+" lux"));
+      const row=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"});
+      const lux=inp({width:"100%",background:"rgba(255,255,255,0.07)",border:"1px solid "+C.border,
+        borderRadius:"8px",color:C.text,fontSize:"16px",padding:"9px",outline:"none"},
+        {type:"number",min:"0",step:"1",placeholder:"Measured lux"});
+      lux.value=readings[area]?.lux??"";
+      lux.addEventListener("input",()=>{readings[area]={...readings[area],lux:lux.value,meets:lux.value!==""&&Number(lux.value)>=min&&Number(lux.value)<=max};put("readings",readings);});
+      row.appendChild(lux);
+      const result=span({fontSize:"12px",fontWeight:"800",color:readings[area]?.meets?C.green:C.muted,
+        alignSelf:"center"},readings[area]?.lux==null||readings[area].lux===""?"Not measured":readings[area].meets?"Within range":"Outside range");
+      row.appendChild(result);
+      lux.addEventListener("input",()=>{result.textContent=lux.value===""?"Not measured":Number(lux.value)>=min&&Number(lux.value)<=max?"Within range":"Outside range";result.style.color=lux.value===""?C.muted:Number(lux.value)>=min&&Number(lux.value)<=max?C.green:C.red;});
+      card.appendChild(row);bdy.appendChild(card);
+    });
+  }else if(fn==="Product Temperature Report"){
+    heading("Hourly roti temperatures","🌡");
+    text("Product","product","Product (e.g. Roti)");
+    const readings=value("readings")||{};
+    TEMPERATURE_SLOTS.forEach((slot,index)=>{
+      const card=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"12px",marginBottom:"8px"});
+      card.appendChild(div({fontSize:"14px",fontWeight:"800",color:meta.color,marginBottom:"8px"},
+        slot+" · Reading "+(index+1)));
+      const row=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px"});
+      [["Table no","tableNo","text"],["Temperature (°C)","temperature","number"],
+        ["Status","status","text"],["Staff","staff","text"]].forEach(([label,key,type])=>{
+        const i=inp({width:"100%",background:"rgba(255,255,255,0.07)",border:"1px solid "+C.border,
+          borderRadius:"7px",color:C.text,fontSize:"13px",padding:"8px",outline:"none"},
+          {type,placeholder:label});
+        i.value=readings[slot]?.[key]||"";
+        i.addEventListener("input",()=>{readings[slot]={...readings[slot],[key]:i.value};put("readings",readings);});
+        row.appendChild(i);
+      });
+      card.appendChild(row);bdy.appendChild(card);
+    });
+  }else if(fn==="Cloth Wash & Sanitation Log"){
+    heading("Washing record","🧺");
+    choice("Shift","shift",["Morning","Evening","Night"]);
+    choice("Cloth Type","clothType",["Cleaning cloth","Food-contact cloth","Uniform","Other"]);
+    choice("Wash Method","washMethod",["Manual wash","Machine wash","Other"]);
+    text("Detergent / Sanitiser Used","chemical","Product and concentration");
+    choice("Drying Method","dryingMethod",["Air dry","Machine dry","Other"]);
+    choice("Visual Check OK?","visualCheck",["Yes","No"]);
+    text("Washed By","washedBy",S.user.name);
+    text("Supervisor Initials","supervisorInitials","Supervisor initials");
+  }else if(fn==="Flour Sieving Log"){
+    heading("Batch and run","⚖");
+    text("Batch / Lot No.","batch","Supplier batch / lot number");
+    choice("Flour Type","flourType",["Atta","Maida","Other"]);
+    number("Qty Sieved","quantity","kg");
+    const times=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"});
+    times.appendChild(makeTime("Start Time","",value("startTime"),v=>put("startTime",v)));
+    times.appendChild(makeTime("End Time","",value("endTime"),v=>put("endTime",v)));
+    bdy.appendChild(times);
+    const duration=()=>{
+      const a=String(value("startTime")||"").split(":").map(Number);
+      const z=String(value("endTime")||"").split(":").map(Number);
+      if(a.length!==2||z.length!==2||a.some(Number.isNaN)||z.some(Number.isNaN))return "";
+      return ((z[0]*60+z[1]-a[0]*60-a[1]+1440)%1440)+" minutes";
+    };
+    const durationLabel=div({fontSize:"12px",color:C.muted,margin:"-6px 0 14px"},
+      "Duration: "+(duration()||"Enter start and end times"));
+    const timeInputs=times.querySelectorAll("input");
+    timeInputs.forEach(input=>input.addEventListener("input",()=>{durationLabel.textContent="Duration: "+(duration()||"Enter start and end times");}));
+    bdy.appendChild(durationLabel);
+    choice("Foreign Matter Found?","foreignMatter",["Y","N"]);
+    choice("Sieve Condition","sieveCondition",["OK","Damaged"]);
+    text("Operator","operator",S.user.name);
+    text("Supervisor","supervisor","Supervisor name");
+    text("Remarks","remarks","Additional notes",2);
+  }
+  submit();
+}
+
+const TEMPLATE_REPORT_FORMS=Object.keys(DEFAULT_FORMS_META).filter(fn=>[
+  "Grooming","Flour Receiving Register","Cleaning Checklist","Customer Complaints & Feedback",
+  "Lux Level Report","Product Temperature Report","Cloth Wash & Sanitation Log","Flour Sieving Log"
+].includes(fn));
+
+function templateReportBounds(period,dateValue){
+  const date=new Date((dateValue||todayKey())+"T00:00:00");
+  if(Number.isNaN(date.getTime())) throw new Error("Choose a valid report date.");
+  const from=new Date(date),to=new Date(date);
+  if(period==="weekly"){
+    from.setDate(date.getDate()-((date.getDay()+6)%7));
+    to.setDate(from.getDate()+6);
+  }else if(period==="monthly"){
+    from.setDate(1);to.setMonth(to.getMonth()+1,0);
+  }
+  const key=d=>dateKeyFromDate(d);
+  return{from:key(from),to:key(to)};
+}
+
+function getTemplateReportRecords(formName,period,dateValue){
+  const bounds=templateReportBounds(period,dateValue);
+  return getFormLogs(formName).filter(log=>{
+    const recordDate=String(log.data?.date||"").slice(0,10);
+    return recordDate&&recordDate>=bounds.from&&recordDate<=bounds.to;
+  }).sort((a,b)=>String(a.data?.date||"").localeCompare(String(b.data?.date||""))||a.id-b.id);
+}
+
+function templateReportRows(formName,records){
+  const rows=[];
+  const add=(date,values)=>rows.push([date,...values]);
+  records.forEach((log,recordIndex)=>{
+    const d=log.data||{},date=d.date||"";
+    if(formName==="Grooming"){
+      const current=d.groomingChecks||d.groomingData||{};
+      GROOMING_TEMPLATE_PARAMS.forEach((param,i)=>{
+        const oldValue=current[param]||current[GROOMING_PARAMS[[0,1,2,3,4,5,6,7,9,10,11,12][i]]]||[];
+        add(date,[param,(Array.isArray(oldValue)?oldValue:[]).join(", "),d.dept||"",log.user||"",d.overall_score||"",d.issues||""]);
+      });
+    }else if(formName==="Cleaning Checklist"){
+      CLEANING_CHECKS.forEach(([stage,area,activity],i)=>{
+        const check=(d.checks||[])[i]||{};
+        add(date,[i+1,stage,area,activity,CLEANING_ACCEPTANCE[i],check.status||"",check.remarks||"",check.checkedBy||"",check.time||"",check.verifiedBy||"",d.shift||"",d.areaLine||""]);
+      });
+    }else if(formName==="Product Temperature Report"){
+      TEMPERATURE_SLOTS.forEach(slot=>{
+        const r=(d.readings||{})[slot]||{};
+        add(date,[slot,r.tableNo||"",r.temperature||"",r.status||"",r.staff||"",d.product||"",log.user||""]);
+      });
+    }else if(formName==="Lux Level Report"){
+      LUX_AREAS.forEach(([area,min,max,basis],index)=>{
+        const r=(d.readings||{})[area]||{};
+        add(date,[index+1,area,r.lux??"",min+"–"+max,basis,r.meets==null?"":r.meets?"OK":"Out of range",d.location||"",d.surveyor||""]);
+      });
+    }else if(formName==="Flour Receiving Register"){
+      add(date,[recordIndex+1,d.vehicle||"",d.supplier||"",d.invoice||"",d.lot||"",d.mfgDate||"",d.expiryDate||"",
+        d.appearance||"",d.colour||"",d.smell||"",d.texture||"",d.sensoryRemarks||"",d.foreignMatter||"",
+        d.infestation||"",d.vehicleHygiene||"",d.decision||"",d.condition||"",d.qaSign||"",d.receivedBy||""]);
+    }else if(formName==="Customer Complaints & Feedback"){
+      rows.push([recordIndex+1,date,d.customer||"",d.contact||"",d.product||"",d.batch||"",d.type||"",d.details||"",
+        d.action||"",d.handledBy||"",d.status||"",d.dateClosed||""]);
+    }else if(formName==="Cloth Wash & Sanitation Log"){
+      add(date,[d.shift||"",d.clothType||"",d.washMethod||"",d.chemical||"",d.dryingMethod||"",d.visualCheck||"",
+        d.washedBy||"",d.supervisorInitials||""]);
+    }else if(formName==="Flour Sieving Log"){
+      const start=d.startTime||"",end=d.endTime||"";
+      let duration="";
+      if(start&&end){const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);duration=((eh*60+em-sh*60-sm+1440)%1440)+" min";}
+      add(date,[d.batch||"",d.flourType||"",d.quantity||"",start,end,duration,d.foreignMatter||"",
+        d.sieveCondition||"",d.operator||"",d.supervisor||"",d.remarks||""]);
+    }
+  });
+  const headers={
+    "Grooming":["Date","Grooming Parameter","Staff Not Complying","Department","Checked By","Overall Score","Additional Issues"],
+    "Cleaning Checklist":["Date","Sr. No.","Stage / Frequency","Area / Equipment","Specific Check / Cleaning Activity","Acceptance Criteria","Status (OK / Not OK / N/A)","Corrective Action / Remarks","Checked By","Time","Verified By","Shift","Area / Line"],
+    "Product Temperature Report":["Date","Time Slot","Table No.","Temperature (°C)","Status","Staff","Product","Recorded By"],
+    "Lux Level Report":["Date","S.No.","Area / Work Station","Measured Lux","Recommended Lux (Min-Max)","Applicable Standard Basis","Result","Site / Location","Surveyor"],
+    "Flour Receiving Register":["Date","Entry No.","Vehicle No.","Supplier Name","Challan / Invoice No.","Lot No.","Mfg. Date","Expiry Date","Appearance / (OK / Not OK)","Colour / (OK / Not OK)","Smell / Odour / (OK / Not OK)","Texture / (OK / Not OK)","Sensory Remarks","Foreign Matter","Infestation","Hygiene of Vehicle","Decision","Condition (if any)","QA Sign","Received By"],
+    "Customer Complaints & Feedback":["S. No.","Date","Customer / Shop Name","Contact No.","Product","Batch / Lot No.","Type","Complaint / Feedback Details","Action Taken","Handled By","Status","Date Closed"],
+    "Cloth Wash & Sanitation Log":["Date","Shift","Cloth Type","Wash Method","Detergent / Sanitiser Used","Drying Method","Visual Check OK?","Washed By","Supervisor Initials"],
+    "Flour Sieving Log":["Date","Batch / Lot No.","Flour Type","Qty Sieved (kg)","Start Time","End Time","Duration (min)","Foreign Matter Found?","Sieve Condition","Operator","Supervisor","Remarks"]
+  };
+  return{headers:headers[formName]||["Date"],rows};
+}
+
+function templateDateSequence(period,dateValue){
+  const {from,to}=templateReportBounds(period,dateValue);
+  const dates=[];
+  for(const cursor=new Date(from+"T00:00:00"),end=new Date(to+"T00:00:00");cursor<=end;cursor.setDate(cursor.getDate()+1)){
+    dates.push(dateKeyFromDate(cursor));
+  }
+  return dates;
+}
+
+function buildGroomingMatrixHTML(period,dateValue,records){
+  const dates=templateDateSequence(period,dateValue);
+  const legacyIndexes=[0,1,2,3,4,5,6,7,9,10,11,12];
+  const byDate={};
+  records.forEach(log=>{
+    const date=String(log.data?.date||"").slice(0,10);
+    (byDate[date]||(byDate[date]=[])).push(log);
+  });
+  const head=dates.map(d=>"<th>"+escHtml(String(Number(d.slice(8))))+"</th>").join("");
+  const rows=GROOMING_TEMPLATE_PARAMS.map((param,index)=>{
+    const cells=dates.map(date=>{
+      const names=[];
+      (byDate[date]||[]).forEach(log=>{
+        const checks=log.data?.groomingChecks||log.data?.groomingData||{};
+        const values=checks[param]||checks[GROOMING_PARAMS[legacyIndexes[index]]]||[];
+        (Array.isArray(values)?values:[]).forEach(name=>{if(name&&!names.includes(name))names.push(name);});
+      });
+      return "<td>"+escHtml(names.join(", "))+"</td>";
+    }).join("");
+    return "<tr><td>"+escHtml(param)+"</td><td>"+escHtml(GROOMING_TEMPLATE_HI[index])+"</td>"+cells+"</tr>";
+  }).join("");
+  const signatures=dates.map(date=>{
+    const names=[...new Set((byDate[date]||[]).map(log=>log.user).filter(Boolean))];
+    return "<td>"+escHtml(names.join(", "))+"</td>";
+  }).join("");
+  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Grooming Checklist for Food Handlers — "+escHtml(new Date(dateValue+"T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"}))+"</th></tr>"+
+    "<tr><th>Parameters</th><th>पैरामीटर</th>"+head+"</tr></thead><tbody>"+rows+
+    "<tr><td>Sign</td><td>Sign</td>"+signatures+"</tr></tbody></table>";
+}
+
+function buildTemperatureMatrixHTML(period,dateValue,records){
+  const dates=templateDateSequence(period,dateValue);
+  const byDate={};
+  records.forEach(log=>{const date=String(log.data?.date||"").slice(0,10);(byDate[date]||(byDate[date]=[])).push(log);});
+  const details=[["Table no","tableNo"],["Temp","temperature"],["Status","status"],["Staff","staff"]];
+  const body=TEMPERATURE_SLOTS.map(slot=>details.map(([label,key],index)=>{
+    const cells=dates.map(date=>{
+      const values=(byDate[date]||[]).map(log=>log.data?.readings?.[slot]?.[key]).filter(v=>v!==undefined&&v!=="");
+      return "<td>"+escHtml(values.join("; "))+"</td>";
+    }).join("");
+    return "<tr>"+(index===0?"<td rowspan='4'>"+escHtml(slot)+"</td>":"")+"<td>"+escHtml(label)+"</td>"+cells+"</tr>";
+  }).join("")).join("");
+  const heads=dates.map(date=>"<th>"+escHtml(date.slice(8,10))+"</th>").join("");
+  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Product (ROTI) Temperature Report</th></tr>"+
+    "<tr><th>Time</th><th>Details</th>"+heads+"</tr></thead><tbody>"+body+"</tbody></table>";
+}
+
+const FLOUR_EVALUATION_CRITERIA=[
+  ["Appearance","Fine, uniform, free-flowing powder. No lumps.","Lumpy, caked, discoloured patches, wet or sweaty surface.","Reject entire lot. Raise NCR."],
+  ["Colour","Creamy white to off-white, uniform.","Yellowish, greyish, dark spots, unusual discolouration.","Sample for lab analysis before decision."],
+  ["Smell / Odour","Mild, natural wheat aroma. Neutral.","Musty, sour, rancid, chemical or any off-odour.","Reject. Do not unload. Return to supplier."],
+  ["Texture","Smooth, fine, dry to touch. No grittiness.","Coarse, gritty particles, sticky or damp feel.","Hold lot. Escalate to QA Manager."],
+  ["Foreign Matter","Absent. No visible insects, debris, stones or extraneous matter.","Any visible foreign material present.","Reject immediately. Document and photograph."],
+  ["Infestation","No insects, larvae, or webbing visible.","Any signs of insect activity, larvae, or webbing.","Reject lot. Pest control team to inspect vehicle."],
+  ["Vehicle Hygiene","Vehicle clean, dry, odour-free. No cross-contamination risk.","Dirty vehicle, pest evidence, strong odour, wet/damp interior.","Reject unloading. Ask supplier to send clean vehicle."]
+];
+
+function buildTemplatePrintHTML(formName,period,dateValue,records){
+  const bounds=templateReportBounds(period,dateValue);
+  const {headers,rows}=templateReportRows(formName,records);
+  const span=bounds.from===bounds.to?bounds.from:bounds.from+" to "+bounds.to;
+  const firstData=records[0]?.data||{};
+  const tableRows=rows.map(row=>"<tr>"+row.map(value=>"<td>"+escHtml(value==null?"":value)+"</td>").join("")+"</tr>").join("");
+  let sheet=formName==="Grooming"?buildGroomingMatrixHTML(period,dateValue,records):
+    formName==="Product Temperature Report"?buildTemperatureMatrixHTML(period,dateValue,records):
+    rows.length?"<table><thead><tr>"+headers.map(h=>"<th>"+escHtml(h)+"</th>").join("")+"</tr></thead><tbody>"+tableRows+"</tbody></table>":
+    "<div class='empty'>No saved records for this form and date range.</div>";
+  if(formName==="Flour Receiving Register"){
+    sheet+="<section class='next-page'><h1>Wheat Flour Sensory Evaluation Criteria</h1><table><thead><tr>"+
+      ["Parameter","Accept (OK)","Reject (Not OK)","Action Required"].map(h=>"<th>"+h+"</th>").join("")+
+      "</tr></thead><tbody>"+FLOUR_EVALUATION_CRITERIA.map(row=>"<tr>"+row.map(value=>"<td>"+escHtml(value)+"</td>").join("")+"</tr>").join("")+"</tbody></table></section>";
+  }
+  if(formName==="Cleaning Checklist"){
+    sheet+="<section class='next-page'><h1>Checklist Instructions</h1><ol>"+
+      ["Complete a separate checklist for each date and production shift/line as applicable.",
+       "Complete checks in the listed sequence: before production, during production, after production, then end of day.",
+       "Select OK, Not OK, or N/A from the status list. Do not leave a required check blank.",
+       "For every Not OK result, describe the issue and corrective action in the remarks column, and inform the supervisor.",
+       "Record actual atta type/lot and quantity in the remarks or linked stock record; this checklist does not replace the raw-material stock register.",
+       "Record water-tank status and gas status in remarks when relevant. Follow approved site safety procedures for gas and equipment.",
+       "Cleaning chemicals, concentrations, contact times and sanitation method must follow the site's approved cleaning SOP and chemical label.",
+       "The person who performs/checks the task signs in Checked by; supervisor verifies completion in Verified by.",
+       "Do not clean moving equipment. Switch off/isolate equipment and follow manufacturer/site safety procedures before cleaning."]
+        .map(item=>"<li>"+escHtml(item)+"</li>").join("")+"</ol></section>";
+  }
+  let sheetMeta="";
+  const monthYear=new Date(bounds.from+"T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  if(formName==="Flour Receiving Register"){
+    sheetMeta="<div class='sub'>Month / Year: "+escHtml(monthYear)+" &nbsp; | &nbsp; Site / Location: "+
+      escHtml(firstData.site||"")+" &nbsp; | &nbsp; Reviewed By: "+escHtml(firstData.reviewedBy||"")+" &nbsp; | &nbsp; Approved By: "+
+      escHtml(firstData.approvedBy||"")+"</div>";
+  }else if(formName==="Customer Complaints & Feedback"){
+    sheetMeta="<div class='sub'>Unit name: "+escHtml(firstData.unitName||"")+" &nbsp; | &nbsp; Month / Year: "+escHtml(monthYear)+"</div>";
+  }
+  return "<!doctype html><html><head><meta charset='utf-8'><title>"+escHtml(formName)+"</title><style>"+
+    "@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#111;margin:0}h1{font-size:18px;margin:0 0 5px}"+
+    ".sub{font-size:11px;margin-bottom:14px}.brand{font-weight:bold;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse;table-layout:auto}"+
+    "th,td{border:1px solid #555;padding:5px 6px;text-align:left;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}"+
+    "th{background:#ddd;font-weight:bold}.sign{margin-top:24px;display:flex;justify-content:space-between}.sign span{border-top:1px solid #555;padding-top:5px;width:28%}"+
+    ".empty{padding:16px;border:1px solid #555} .print{margin:0 0 12px;padding:8px 14px}.next-page{break-before:page}.matrix{font-size:8px}"+
+    ".matrix th,.matrix td{padding:3px 2px;text-align:center}.matrix th:first-child,.matrix td:first-child,.matrix th:nth-child(2),.matrix td:nth-child(2){text-align:left}"+
+    "@media print{.print{display:none} tr{break-inside:avoid} thead{display:table-header-group}}"+
+    "</style></head><body><button class='print' onclick='window.print()'>Print / Save as PDF</button>"+
+    "<div class='brand'>ROTI FACTORY · OPERATIONAL RECORD</div><h1>"+escHtml(formName)+"</h1>"+
+    "<div class='sub'>Period: "+escHtml(span)+" &nbsp; | &nbsp; Records: "+records.length+" &nbsp; | &nbsp; Generated: "+escHtml(new Date().toLocaleDateString())+"</div>"+
+    sheetMeta+
+    sheet+
+    "<div class='sign'><span>Prepared By</span><span>Checked By</span><span>Approved By</span></div></body></html>";
+}
+
+function openTemplatePrint(formName,period,dateValue){
+  const records=getTemplateReportRecords(formName,period,dateValue);
+  const printWindow=window.open("","_blank");
+  if(!printWindow){toast("Allow pop-ups to open the print-ready report.");return;}
+  printWindow.document.open();
+  printWindow.document.write(buildTemplatePrintHTML(formName,period,dateValue,records));
+  printWindow.document.close();
+}
+
+function renderTemplateReports(){
+  const w=div({minHeight:"100vh",background:C.bg});
+  w.appendChild(makeHdr("Template Reports",S.user.name,null,()=>ss({screen:"home"}),"← Home"));
+  const bdy=wrap();
+  bdy.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",marginBottom:"16px"},
+    "Choose a form sheet and date. Weekly means Monday–Sunday; monthly includes every calendar date. The print view can be saved as PDF."));
+  const fields=div({display:"grid",gridTemplateColumns:"1fr",gap:"10px"});
+  const select=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
+  TEMPLATE_REPORT_FORMS.forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=name;if(name===S.templateForm)o.selected=true;select.appendChild(o);});
+  select.addEventListener("change",()=>{S.templateForm=select.value;updateCount();});
+  const dateInput=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"},{type:"date"});
+  dateInput.value=S.templateDate||todayKey();dateInput.addEventListener("change",()=>{S.templateDate=dateInput.value;updateCount();});
+  const period=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
+  [["daily","Daily"],["weekly","Weekly (Monday–Sunday)"],["monthly","Monthly"]].forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value===(S.templatePeriod||"daily"))o.selected=true;period.appendChild(o);});
+  period.addEventListener("change",()=>{S.templatePeriod=period.value;updateCount();});
+  fields.appendChild(select);fields.appendChild(dateInput);fields.appendChild(period);bdy.appendChild(fields);
+  const count=div({margin:"12px 0",padding:"12px",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",fontSize:"13px",color:C.text});
+  function updateCount(){try{const bounds=templateReportBounds(period.value,dateInput.value);const n=getTemplateReportRecords(select.value,period.value,dateInput.value).length;
+    count.textContent=n+" saved record(s) · "+(bounds.from===bounds.to?bounds.from:bounds.from+" to "+bounds.to);
+  }catch(error){count.textContent=error.message;}}
+  updateCount();bdy.appendChild(count);
+  bdy.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"10px",color:"#111",fontWeight:"800",fontSize:"15px",padding:"13px"},
+    "Open print-ready sheet / Save as PDF",()=>openTemplatePrint(select.value,period.value,dateInput.value)));
+  bdy.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.5",marginTop:"10px"},
+    "In the print dialog choose “Save as PDF”. Source workbook examples are not included; only saved app records are printed."));
+  w.appendChild(bdy);return w;
 }
 
 // ── BUILT-IN FORM RENDERERS ───────────────────────────────────────────────────
@@ -2318,8 +2918,8 @@ function renderGrooming(bdy,meta){
   bdy.appendChild(makeDate(t("Date"),gf("date"),v=>sf("date",v)));
   bdy.appendChild(makeDropdown(t("Department"),"",tOpts(["Production","Packaging","QC","Maintenance","Accounts","Other"]),gf("dept"),v=>sf("dept",v)));
   bdy.appendChild(div({fontSize:"13px",color:C.muted,marginBottom:"16px",lineHeight:"1.5"},S.user.lang==="hi"?"जो स्टाफ नहीं माना उनके नाम चुनें। सब ठीक हो तो खाली छोड़ें।":"Select staff who did NOT comply. Leave blank if all OK."));
-  GROOMING_PARAMS.forEach(param=>{
-    const paramLabel=t(param)||param;
+  GROOMING_TEMPLATE_PARAMS.forEach(param=>{
+    const paramLabel=S.user.lang==="hi"?GROOMING_TEMPLATE_HI[GROOMING_TEMPLATE_PARAMS.indexOf(param)]:param;
     const cur=S.groomingData[param]||[];
     bdy.appendChild(makeMultiSelect(paramLabel,S.user.lang==="hi"?"खाली छोड़ें अगर सब ठीक है":"Leave blank if all OK",GROOMING_STAFF,cur,arr=>{S.groomingData[param]=arr;}));
   });
@@ -2327,7 +2927,7 @@ function renderGrooming(bdy,meta){
   bdy.appendChild(makeText(t("Additional Issues"),"","",gf("issues"),v=>sf("issues",v)));
   bdy.appendChild(submitBtn("Submit Grooming",meta.color,async()=>{
     const fails=[];const allD=new Set();
-    GROOMING_PARAMS.forEach(p=>{const d=S.groomingData[p]||[];if(d.length){fails.push(p+": "+d.join(", "));d.forEach(n=>allD.add(n));}});
+    GROOMING_TEMPLATE_PARAMS.forEach(p=>{const d=S.groomingData[p]||[];if(d.length){fails.push(p+": "+d.join(", "));d.forEach(n=>allD.add(n));}});
     const entry={id:Date.now(),timestamp:new Date().toISOString(),formName:"Grooming",user:S.user.name,role:S.user.role,data:{...S.fData,groomingChecks:{...S.groomingData},allDefaulters:[...allD]}};
     await trySave("Grooming",()=>fbAddLog("Grooming",entry),()=>{
       sendAlerts(fails.slice(0,5),"Grooming",S.user.name);
@@ -2732,7 +3332,7 @@ function renderHistory(){
         top.appendChild(left);
         const rb=div({display:"flex",gap:"6px",flexShrink:"0",alignItems:"center"});
         rb.appendChild(span({fontSize:"12px",color:C.muted},"View →"));
-        rb.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
+        if(!S.user.isGuest) rb.appendChild(btn({background:"rgba(232,92,56,0.1)",border:"none",color:C.red,
           borderRadius:"6px",padding:"4px 8px",fontSize:"12px"},"✕",
           e=>{e.stopPropagation();if(confirm("Delete?"))fbDelLog(fn,log._key);}));
         top.appendChild(rb);card.appendChild(top);bdy.appendChild(card);
@@ -3919,6 +4519,7 @@ function render(){
       case "reports":  screen=renderReports(); break;
       case "reportHub": screen=renderReportHub(); break;
       case "formReport": screen=renderFormReport(); break;
+      case "templateReports": screen=renderTemplateReports(); break;
       case "history":  screen=renderHistory(); break;
       case "viewer":   screen=renderViewer(); break;
       default:         screen=renderLogin();

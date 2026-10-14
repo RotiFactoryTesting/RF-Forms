@@ -1,12 +1,12 @@
 # RF Forms Firebase security setup
 
-This update replaces the public PIN-only login with Firebase Email/Password Authentication. The browser keeps Firebase's local sign-in session on that device; Google Password Manager can save/autofill the password but does not replace Firebase authentication. Firebase Authentication passwords are never written to Realtime Database.
+RF Forms supports named, password-free operator access through Firebase Anonymous Authentication, plus Firebase Email/Password Authentication for administrators and staff who need assigned permissions. Anonymous Authentication does not make the database public: operator sessions can create submissions and read only submissions owned by their Firebase UID. Their access persists on the same browser profile while its Firebase session remains available; another browser/device has a different anonymous UID.
 
 ## Bootstrap the first administrator
 
 Do these steps in the Firebase project that owns the RF Forms Realtime Database. The current database rules deny all client access, so do not publish the new rules until the administrator profile is prepared.
 
-1. In **Authentication → Sign-in method**, enable **Email/Password**. In **Authentication → Settings → Authorized domains**, make sure `rotifactorytesting.github.io` is listed. Do not enable public account creation in the app; create accounts from Firebase Console.
+1. In **Authentication → Sign-in method**, enable **Anonymous** and **Email/Password**. In **Authentication → Settings → Authorized domains**, make sure `rotifactorytesting.github.io` is listed. Do not enable public email/password account creation in the app; create privileged accounts from Firebase Console.
 2. In **Authentication → Users**, add the administrator's real email address and a strong, unique password. Copy the new user's **UID**.
 3. In **Realtime Database → Data**, edit your existing administrator record under `staff` (the old default record is usually `s0`) and set `authUid` to the new UID. If `staff` has no record yet, add an administrator record such as the following under a new child key like `admin`:
 
@@ -52,6 +52,12 @@ Do these steps in the Firebase project that owns the RF Forms Realtime Database.
    Merge this into the existing data; do not replace the database root or delete existing attendance and submissions.
 5. In **Realtime Database → Rules**, publish the contents of [`database.rules.json`](./database.rules.json). All unmatched paths stay denied.
 6. Open the hosted app and sign in with the administrator's email and password. The app will remove legacy `pin` fields from staff records after the first admin sign-in.
+
+## Password-free operator use
+
+After Anonymous Authentication is enabled and the rules above are published, an operator can choose **Continue without password**, enter a display name, and submit operational forms. The name is for record attribution only; it is not a password or an identity check. Anonymous operators may read only records created by their current Firebase UID, cannot edit/delete submitted records, and cannot access administrator, attendance, alert-recipient, or report-management features. Keep the administrator email/password sign-in for privileged tasks.
+
+The **Template Reports** screen filters saved entries by their chosen form date and supports daily, Monday–Sunday weekly, and calendar-month ranges. Use **Open print-ready sheet / Save as PDF**, then select **Save as PDF** in the browser print dialog. A missing Firebase web configuration prevents the app from connecting; configure the ignored local `firebase-config.js` from `firebase-config.example.js` for local development and never commit real environment-specific configuration.
 
 ## Add staff accounts
 

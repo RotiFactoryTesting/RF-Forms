@@ -1770,7 +1770,7 @@ function renderAdminStaff(bdy){
       fr.appendChild(b);
     });
     card.appendChild(fr);
-    card.appendChild(aInp("Shift (optional)","shift",es,"e.g. Day Shift or Night Shift"));
+    card.appendChild(aInp("Shift (optional)","shift",es,"Morning or Evening"));
     const ar=div({display:"flex",gap:"8px"});
     ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",
       color:"#000",fontWeight:"800",fontSize:"14px",padding:"12px"},"Save",async()=>{
@@ -2142,7 +2142,7 @@ function renderOperationalForm(bdy,meta,fn){
     text("Approved By","approvedBy","Approver name");
   }else if(fn==="Cleaning Checklist"){
     heading("Shift and production area","🧽");
-    choice("Shift","shift",["Morning","Evening","Night"]);
+    choice("Shift","shift",["Morning","Evening"]);
     text("Area / Line","areaLine","Production area or line");
     bdy.appendChild(div({fontSize:"12px",color:C.muted,lineHeight:"1.5",marginBottom:"12px"},
       "Complete the checks in order. For every Not OK, describe the corrective action and record who checked and verified it."));
@@ -2230,7 +2230,7 @@ function renderOperationalForm(bdy,meta,fn){
     });
   }else if(fn==="Cloth Wash & Sanitation Log"){
     heading("Washing record","🧺");
-    choice("Shift","shift",["Morning","Evening","Night"]);
+    choice("Shift","shift",["Morning","Evening"]);
     choice("Cloth Type","clothType",["Cleaning cloth","Food-contact cloth","Uniform","Other"]);
     choice("Wash Method","washMethod",["Manual wash","Machine wash","Other"]);
     text("Detergent / Sanitiser Used","chemical","Product and concentration");
@@ -2880,7 +2880,7 @@ function renderGrooming(bdy,meta){
 function renderHousekeeping(bdy,meta){
   bdy.appendChild(secHdr("Session",meta.color,"🧹"));
   bdy.appendChild(makeDate(t("Date"),gf("date"),v=>sf("date",v)));
-  bdy.appendChild(makeToggle(t("Shift"),"",tOpts(["Morning","Evening","Night"]),gf("shift"),v=>sf("shift",v)));
+  bdy.appendChild(makeToggle(t("Shift"),"",tOpts(["Morning","Evening"]),gf("shift"),v=>sf("shift",v)));
   bdy.appendChild(makeText(t("Checked By"),"","",gf("checked_by"),v=>sf("checked_by",v),1));
   [{title:"Production",color:C.amber,icon:"◉",areas:["Production floor","Machines & conveyors","Drainage"]},
    {title:"Storage",color:C.blue,icon:"▣",areas:["Storage area","Packaging area","Raw material area"]},

@@ -2272,22 +2272,32 @@ const TEMPLATE_REPORT_FORMS=Object.keys(DEFAULT_FORMS_META).filter(fn=>[
   "Lux Level Report","Product Temperature Report","Cloth Wash & Sanitation Log","Flour Sieving Log"
 ].includes(fn));
 
-function templateReportBounds(period,dateValue){
-  const date=new Date((dateValue||todayKey())+"T00:00:00");
-  if(Number.isNaN(date.getTime())) throw new Error("Choose a valid report date.");
+function parseTemplateReportDate(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||""))) throw new Error("Choose a valid report date.");
+  const date=new Date(value+"T00:00:00");
+  if(Number.isNaN(date.getTime())||dateKeyFromDate(date)!==value) throw new Error("Choose a valid report date.");
+  return date;
+}
+
+function templateReportBounds(period,dateValue,endDateValue){
+  const date=parseTemplateReportDate(dateValue||todayKey());
   const from=new Date(date),to=new Date(date);
   if(period==="weekly"){
     from.setDate(date.getDate()-((date.getDay()+6)%7));
     to.setDate(from.getDate()+6);
   }else if(period==="monthly"){
     from.setDate(1);to.setMonth(to.getMonth()+1,0);
+  }else if(period==="manual"){
+    const end=parseTemplateReportDate(endDateValue||dateValue);
+    to.setTime(end.getTime());
+    if(from>to) throw new Error("End date must be on or after the start date.");
   }
   const key=d=>dateKeyFromDate(d);
   return{from:key(from),to:key(to)};
 }
 
-function getTemplateReportRecords(formName,period,dateValue){
-  const bounds=templateReportBounds(period,dateValue);
+function getTemplateReportRecords(formName,period,dateValue,endDateValue){
+  const bounds=templateReportBounds(period,dateValue,endDateValue);
   return getFormLogs(formName).filter(log=>{
     const recordDate=String(log.data?.date||"").slice(0,10);
     return recordDate&&recordDate>=bounds.from&&recordDate<=bounds.to;
@@ -2351,8 +2361,8 @@ function templateReportRows(formName,records){
   return{headers:headers[formName]||["Date"],rows};
 }
 
-function templateDateSequence(period,dateValue){
-  const {from,to}=templateReportBounds(period,dateValue);
+function templateDateSequence(period,dateValue,endDateValue){
+  const {from,to}=templateReportBounds(period,dateValue,endDateValue);
   const dates=[];
   for(const cursor=new Date(from+"T00:00:00"),end=new Date(to+"T00:00:00");cursor<=end;cursor.setDate(cursor.getDate()+1)){
     dates.push(dateKeyFromDate(cursor));
@@ -2360,8 +2370,8 @@ function templateDateSequence(period,dateValue){
   return dates;
 }
 
-function buildGroomingMatrixHTML(period,dateValue,records){
-  const dates=templateDateSequence(period,dateValue);
+function buildGroomingMatrixHTML(period,dateValue,endDateValue,records){
+  const dates=templateDateSequence(period,dateValue,endDateValue);
   const legacyIndexes=[0,1,2,3,4,5,6,7,9,10,11,12];
   const byDate={};
   records.forEach(log=>{
@@ -2385,13 +2395,14 @@ function buildGroomingMatrixHTML(period,dateValue,records){
     const names=[...new Set((byDate[date]||[]).map(log=>log.user).filter(Boolean))];
     return "<td>"+escHtml(names.join(", "))+"</td>";
   }).join("");
-  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Grooming Checklist for Food Handlers — "+escHtml(new Date(dateValue+"T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"}))+"</th></tr>"+
+  const range=dates.length>1?dates[0]+" to "+dates[dates.length-1]:dates[0];
+  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Grooming Checklist for Food Handlers — "+escHtml(range)+"</th></tr>"+
     "<tr><th>Parameters</th><th>पैरामीटर</th>"+head+"</tr></thead><tbody>"+rows+
     "<tr><td>Sign</td><td>Sign</td>"+signatures+"</tr></tbody></table>";
 }
 
-function buildTemperatureMatrixHTML(period,dateValue,records){
-  const dates=templateDateSequence(period,dateValue);
+function buildTemperatureMatrixHTML(period,dateValue,endDateValue,records){
+  const dates=templateDateSequence(period,dateValue,endDateValue);
   const byDate={};
   records.forEach(log=>{const date=String(log.data?.date||"").slice(0,10);(byDate[date]||(byDate[date]=[])).push(log);});
   const details=[["Table no","tableNo"],["Temp","temperature"],["Status","status"],["Staff","staff"]];
@@ -2403,7 +2414,8 @@ function buildTemperatureMatrixHTML(period,dateValue,records){
     return "<tr>"+(index===0?"<td rowspan='4'>"+escHtml(slot)+"</td>":"")+"<td>"+escHtml(label)+"</td>"+cells+"</tr>";
   }).join("")).join("");
   const heads=dates.map(date=>"<th>"+escHtml(date.slice(8,10))+"</th>").join("");
-  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Product (ROTI) Temperature Report</th></tr>"+
+  const range=dates.length>1?dates[0]+" to "+dates[dates.length-1]:dates[0];
+  return "<table class='matrix'><thead><tr><th colspan='"+(dates.length+2)+"'>Product (ROTI) Temperature Report — "+escHtml(range)+"</th></tr>"+
     "<tr><th>Time</th><th>Details</th>"+heads+"</tr></thead><tbody>"+body+"</tbody></table>";
 }
 
@@ -2417,14 +2429,14 @@ const FLOUR_EVALUATION_CRITERIA=[
   ["Vehicle Hygiene","Vehicle clean, dry, odour-free. No cross-contamination risk.","Dirty vehicle, pest evidence, strong odour, wet/damp interior.","Reject unloading. Ask supplier to send clean vehicle."]
 ];
 
-function buildTemplatePrintHTML(formName,period,dateValue,records){
-  const bounds=templateReportBounds(period,dateValue);
+function buildTemplatePrintHTML(formName,period,dateValue,endDateValue,records){
+  const bounds=templateReportBounds(period,dateValue,endDateValue);
   const {headers,rows}=templateReportRows(formName,records);
   const span=bounds.from===bounds.to?bounds.from:bounds.from+" to "+bounds.to;
   const firstData=records[0]?.data||{};
   const tableRows=rows.map(row=>"<tr>"+row.map(value=>"<td>"+escHtml(value==null?"":value)+"</td>").join("")+"</tr>").join("");
-  let sheet=formName==="Grooming"?buildGroomingMatrixHTML(period,dateValue,records):
-    formName==="Product Temperature Report"?buildTemperatureMatrixHTML(period,dateValue,records):
+  let sheet=formName==="Grooming"?buildGroomingMatrixHTML(period,dateValue,endDateValue,records):
+    formName==="Product Temperature Report"?buildTemperatureMatrixHTML(period,dateValue,endDateValue,records):
     rows.length?"<table><thead><tr>"+headers.map(h=>"<th>"+escHtml(h)+"</th>").join("")+"</tr></thead><tbody>"+tableRows+"</tbody></table>":
     "<div class='empty'>No saved records for this form and date range.</div>";
   if(formName==="Flour Receiving Register"){
@@ -2470,12 +2482,12 @@ function buildTemplatePrintHTML(formName,period,dateValue,records){
     "<div class='sign'><span>Prepared By</span><span>Checked By</span><span>Approved By</span></div></body></html>";
 }
 
-function openTemplatePrint(formName,period,dateValue){
-  const records=getTemplateReportRecords(formName,period,dateValue);
+function openTemplatePrint(formName,period,dateValue,endDateValue){
+  const records=getTemplateReportRecords(formName,period,dateValue,endDateValue);
   const printWindow=window.open("","_blank");
   if(!printWindow){toast("Allow pop-ups to open the print-ready report.");return;}
   printWindow.document.open();
-  printWindow.document.write(buildTemplatePrintHTML(formName,period,dateValue,records));
+  printWindow.document.write(buildTemplatePrintHTML(formName,period,dateValue,endDateValue,records));
   printWindow.document.close();
 }
 
@@ -2484,24 +2496,65 @@ function renderTemplateReports(){
   w.appendChild(makeHdr("Template Reports",S.user.name,null,()=>ss({screen:"home"}),"← Home"));
   const bdy=wrap();
   bdy.appendChild(div({fontSize:"13px",color:C.muted,lineHeight:"1.5",marginBottom:"16px"},
-    "Choose a form sheet and date. Weekly means Monday–Sunday; monthly includes every calendar date. The print view can be saved as PDF."));
-  const fields=div({display:"grid",gridTemplateColumns:"1fr",gap:"10px"});
+    "Choose a form and period. Daily, weekly, and monthly periods fill the date range automatically; choose Manual date range to set your own From and To dates. Weekly means Monday–Sunday. The print view can be saved as PDF."));
+  const fields=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"});
   const select=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
   TEMPLATE_REPORT_FORMS.forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=name;if(name===S.templateForm)o.selected=true;select.appendChild(o);});
   select.addEventListener("change",()=>{S.templateForm=select.value;updateCount();});
-  const dateInput=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"},{type:"date"});
-  dateInput.value=S.templateDate||todayKey();dateInput.addEventListener("change",()=>{S.templateDate=dateInput.value;updateCount();});
   const period=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
-  [["daily","Daily"],["weekly","Weekly (Monday–Sunday)"],["monthly","Monthly"]].forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value===(S.templatePeriod||"daily"))o.selected=true;period.appendChild(o);});
-  period.addEventListener("change",()=>{S.templatePeriod=period.value;updateCount();});
-  fields.appendChild(select);fields.appendChild(dateInput);fields.appendChild(period);bdy.appendChild(fields);
+  [["daily","Daily"],["weekly","Weekly (Monday–Sunday)"],["monthly","Monthly"],["manual","Manual date range"]].forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value===(S.templatePeriod||"daily"))o.selected=true;period.appendChild(o);});
+  const fromInput=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"},{type:"date"});
+  const toInput=inp({width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"},{type:"date"});
+  const fromLabel=div({fontSize:"12px",color:C.muted,marginBottom:"4px"},"From");
+  const toLabel=div({fontSize:"12px",color:C.muted,marginBottom:"4px"},"To");
+  const fromField=div({minWidth:"0"});fromField.appendChild(fromLabel);fromField.appendChild(fromInput);
+  const toField=div({minWidth:"0"});toField.appendChild(toLabel);toField.appendChild(toInput);
+  let fromDate=S.templateFrom||S.templateDate||todayKey();
+  let toDate=S.templateTo||fromDate;
+  function applyPeriod(value,anchor){
+    period.value=value;
+    if(value!=="manual"){
+      const bounds=templateReportBounds(value,anchor);
+      fromDate=bounds.from;toDate=bounds.to;
+    }
+    fromInput.value=fromDate;toInput.value=toDate;
+    toInput.disabled=value!=="manual"&&value==="daily";
+    toInput.style.opacity=toInput.disabled?"0.55":"1";
+    S.templatePeriod=value;S.templateDate=anchor;
+    S.templateFrom=fromDate;S.templateTo=toDate;
+  }
+  applyPeriod(period.value,fromDate);
+  period.addEventListener("change",()=>{
+    applyPeriod(period.value,fromInput.value||todayKey());
+    updateCount();
+  });
+  fromInput.addEventListener("change",()=>{
+    fromDate=fromInput.value;S.templateFrom=fromDate;S.templateDate=fromDate;
+    if(period.value!=="manual"){
+      period.value="manual";S.templatePeriod="manual";
+      toInput.disabled=false;toInput.style.opacity="1";
+    }
+    updateCount();
+  });
+  toInput.addEventListener("change",()=>{
+    toDate=toInput.value;S.templateTo=toDate;
+    if(period.value!=="manual"){
+      period.value="manual";S.templatePeriod="manual";
+      toInput.disabled=false;toInput.style.opacity="1";
+    }
+    updateCount();
+  });
+  fields.appendChild(select);fields.appendChild(period);fields.appendChild(fromField);fields.appendChild(toField);bdy.appendChild(fields);
   const count=div({margin:"12px 0",padding:"12px",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",fontSize:"13px",color:C.text});
-  function updateCount(){try{const bounds=templateReportBounds(period.value,dateInput.value);const n=getTemplateReportRecords(select.value,period.value,dateInput.value).length;
+  function updateCount(){try{const bounds=templateReportBounds(period.value,fromInput.value,toInput.value);const n=getTemplateReportRecords(select.value,period.value,fromInput.value,toInput.value).length;
     count.textContent=n+" saved record(s) · "+(bounds.from===bounds.to?bounds.from:bounds.from+" to "+bounds.to);
   }catch(error){count.textContent=error.message;}}
   updateCount();bdy.appendChild(count);
   bdy.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"10px",color:"#111",fontWeight:"800",fontSize:"15px",padding:"13px"},
-    "Open print-ready sheet / Save as PDF",()=>openTemplatePrint(select.value,period.value,dateInput.value)));
+    "Open print-ready sheet / Save as PDF",()=>{
+      try{openTemplatePrint(select.value,period.value,fromInput.value,toInput.value);}
+      catch(error){console.error("Template report could not be opened:",error);toast("⚠ "+error.message,3500);}
+    }));
   bdy.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.5",marginTop:"10px"},
     "In the print dialog choose “Save as PDF”. Source workbook examples are not included; only saved app records are printed."));
   w.appendChild(bdy);return w;
@@ -2742,7 +2795,7 @@ function renderTrainingLog(bdy,meta){
     if(!members.length) return;
     grpGrid.appendChild(btn({padding:"9px 8px",background:C.surface,border:"1.5px solid "+C.border,
       borderRadius:"10px",color:C.muted,fontWeight:"700",fontSize:"13px",textAlign:"center"},grp,
-      ()=>showMultiModal(grp,members,gf("attendees")||[],arr=>sf("attendees",arr))));
+      ()=>showMultiModal(grp,members,gf("attendees")||[],arr=>{sf("attendees",arr);showAtt();})));
   });
   bdy.appendChild(grpGrid);
   const attWrap=div({background:C.surface,border:"1px solid "+C.border,borderRadius:"10px",padding:"10px 12px",marginBottom:"16px"});
@@ -3050,6 +3103,11 @@ function renderMaintenance(bdy,meta){
   bdy.appendChild(secHdr(t("Work Done"),meta.color,"⚙"));
   bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"10px"},S.user.lang==="hi"?"आज किया गया सारा काम चुनें":"Select all work performed today"));
   const ww=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"16px"});
+  const selectedWorkSummary=div({fontSize:"12px",color:C.muted,marginTop:"-8px",marginBottom:"14px",lineHeight:"1.5"});
+  function updateSelectedWorkSummary(){
+    selectedWorkSummary.textContent=S.maintenanceWorks.length?
+      "Selected work: "+S.maintenanceWorks.join(", "):"Selected work: None";
+  }
   MAINTENANCE_WORKS.forEach(work=>{
     const sel=S.maintenanceWorks.includes(work);
     const b=btn({padding:"8px 12px",background:sel?meta.color+"22":C.surface,
@@ -3057,13 +3115,16 @@ function renderMaintenance(bdy,meta){
       color:sel?meta.color:C.muted,fontWeight:"700",fontSize:"13px"},work,()=>{
       if(sel) S.maintenanceWorks=S.maintenanceWorks.filter(w=>w!==work);
       else S.maintenanceWorks.push(work);
-      b.style.background=!sel?meta.color+"22":C.surface;
-      b.style.borderColor=!sel?meta.color:C.border;
-      b.style.color=!sel?meta.color:C.muted;
+      const selected=S.maintenanceWorks.includes(work);
+      b.style.background=selected?meta.color+"22":C.surface;
+      b.style.borderColor=selected?meta.color:C.border;
+      b.style.color=selected?meta.color:C.muted;
+      updateSelectedWorkSummary();
+      scheduleDraftSave();
     });
     ww.appendChild(b);
   });
-  bdy.appendChild(ww);
+  updateSelectedWorkSummary();bdy.appendChild(ww);bdy.appendChild(selectedWorkSummary);
   bdy.appendChild(makeText(t("Spares Used"),"","",gf("spares"),v=>sf("spares",v)));
   bdy.appendChild(makeText(t("Pending Work"),"","",gf("pending"),v=>sf("pending",v)));
   bdy.appendChild(makeDropdown(t("Status"),"",tOpts(["Run","Not-Run"]),gf("status"),v=>sf("status",v)));

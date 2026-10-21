@@ -57,6 +57,16 @@ Do these steps in the Firebase project that owns the RF Forms Realtime Database.
 
 Assigned staff sign in with their work email and password, then use only the forms and reports granted by their profile. The **Template Reports** screen filters saved entries by their chosen form date and supports daily, Monday–Sunday weekly, and calendar-month ranges. Use **Open print-ready sheet / Save as PDF**, then select **Save as PDF** in the browser print dialog. A missing Firebase web configuration prevents the app from connecting; configure the ignored local `firebase-config.js` from `firebase-config.example.js` for local development and never commit real environment-specific configuration.
 
+### WhatsApp submission notifications
+
+To route staff form submissions to an administrator:
+
+1. In **Admin → Staff**, edit the receiving administrator's profile and enter a WhatsApp number with its country code (digits only, for example `919810000000`).
+2. Enable **WhatsApp Reports** for that profile and save it. The app prefers an administrator profile with this flag; otherwise it uses the first configured WhatsApp Reports recipient. The same setting receives the daily report.
+3. After a staff member saves a form online, RF Forms opens a prefilled WhatsApp chat containing the form name, staff member, submission time, and entered form fields. The staff member must review it and tap **Send** in WhatsApp.
+
+WhatsApp click-to-chat does not permit a browser app to send messages silently or guarantee delivery. If a browser blocks the chat tab, the saved submission remains saved and RF Forms shows an **Open WhatsApp message** action. If no recipient is configured, ask an administrator to add the number and enable **WhatsApp Reports**. The notification contact number is readable by signed-in app users so the existing client-side WhatsApp flows can use it; do not enter a number that should be kept secret.
+
 ## Add staff accounts
 
 1. In **Authentication → Users**, add a staff member using an email address they can access and a strong temporary password. Share it privately and have them change it using **Forgot password?** in the app.

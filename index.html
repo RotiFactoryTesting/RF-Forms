@@ -379,7 +379,7 @@ async function startAuthenticatedSession(firebaseUser){
         const alertRecipients={};
         Object.entries(value||{}).forEach(([key,staff])=>{
           if(staff&&staff.wa&&(staff.alerts||staff.reports||staff.isAdmin))
-            alertRecipients[key]={wa:staff.wa,alerts:!!staff.alerts,reports:!!staff.reports};
+            alertRecipients[key]={wa:staff.wa,alerts:!!staff.alerts,reports:!!staff.reports,isAdmin:!!staff.isAdmin};
         });
         set(ref(db,"alert_recipients"),alertRecipients).catch(error=>{
           console.error("Alert recipient list update failed:",error);
@@ -825,6 +825,7 @@ const S={
   reportForm:null,
   reportRange:"today",
   reportLine:null,
+  pendingSubmissionWhatsApp:"",
 };
 
 function ss(patch){Object.assign(S,patch);render();}
@@ -873,9 +874,123 @@ function afterSubmit(fn){
 // instead of pretending the submission worked. Draft is left intact until it
 // actually succeeds, so nothing is lost if the connection drops.
 async function trySave(fn,doSave,onSuccess){
+  const notification=prepareSubmissionWhatsApp(fn);
   const ok=await doSave();
-  if(ok) onSuccess();
-  else showSaveFailedModal(fn,()=>trySave(fn,doSave,onSuccess));
+  if(ok){
+    const whatsappUrl=notification?.url||"";
+    if(notification?.window&&!notification.window.closed){
+      try{
+        notification.window.location.replace(whatsappUrl);
+        toast("✓ Saved. Review the WhatsApp message and tap Send.",4000);
+      }catch(error){
+        console.error("Submission WhatsApp window could not be opened:",error);
+        notification.window.close();
+        S.pendingSubmissionWhatsApp=whatsappUrl;
+      }
+    }else if(whatsappUrl){
+      S.pendingSubmissionWhatsApp=whatsappUrl;
+    }
+    onSuccess();
+    if(S.pendingSubmissionWhatsApp){
+      const url=S.pendingSubmissionWhatsApp;
+      S.pendingSubmissionWhatsApp="";
+      if(document.getElementById("modal").classList.contains("open")){
+        addSubmissionWhatsAppButton(fn,url);
+      }else{
+        showSubmissionWhatsAppFallback(fn,url);
+      }
+    }else if(!S.user?.isAdmin&&!getSubmissionReportRecipient()){
+      toast("✓ Saved. Admin WhatsApp Reports number is not configured.",4500);
+    }
+  }else{
+    if(notification?.window&&!notification.window.closed) notification.window.close();
+    showSaveFailedModal(fn,()=>trySave(fn,doSave,onSuccess));
+  }
+}
+
+function getSubmissionReportRecipient(){
+  return Object.values(FB_ALERT_RECIPIENTS)
+    .filter(recipient=>recipient.reports&&/^\d{7,15}$/.test(String(recipient.wa||"").replace(/\D/g,"")))
+    .sort((a,b)=>Number(!!b.isAdmin)-Number(!!a.isAdmin))[0]||null;
+}
+
+function prepareSubmissionWhatsApp(fn){
+  if(!S.user||S.user.isAdmin) return null;
+  const recipient=getSubmissionReportRecipient();
+  if(!recipient) return null;
+  const data=JSON.parse(JSON.stringify(S.fData||{}));
+  if(S.activeForm===fn){
+    if(fn==="QC Form"){
+      data["QC round"]=S.qcRound||"";
+      data["Line checks"]=S.qcLineData||{};
+      if(S.qcRound==="End of Shift") data["End of shift"]=S.qcEosData||{};
+    }else if(fn==="Grooming"){
+      data["Grooming checks"]=S.groomingData||{};
+    }else if(fn==="Machine Status"){
+      data["Machine checks"]=S.mcParams||{};
+    }else if(fn==="Breakdown Report"){
+      data["Breakdown issues"]=S.breakdownIssues||[];
+      data["Issue details"]=S.breakdownDetails||{};
+    }else if(fn==="Maintenance Report"){
+      data["Work completed"]=S.maintenanceWorks||[];
+    }else if(fn==="Visitor Log"){
+      data["Visitor entries"]=S.visitorEntries||[];
+    }else if(fn==="Pest Control"){
+      data["Inspection mode"]=S.pestMode||"";
+    }
+  }
+  const lines=[
+    "*RF Forms — Staff Submission*",
+    "Form: "+fn,
+    "Staff: "+(S.user.name||"Unknown"),
+    "Submitted: "+new Date().toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}),
+  ];
+  Object.entries(data).forEach(([key,value])=>{
+    if(value==null||value==="") return;
+    const label=key.replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/_/g," ");
+    const text=Array.isArray(value)?value.join(", "):
+      typeof value==="object"?JSON.stringify(value):String(value);
+    if(text) lines.push(label+": "+text);
+  });
+  const message=Array.from(lines.join("\n")+"\n\n_RF Forms_").slice(0,3500).join("");
+  const phone=String(recipient.wa).replace(/\D/g,"");
+  const url="https://wa.me/"+phone+"?text="+encodeURIComponent(message);
+  let chatWindow=null;
+  try{chatWindow=window.open("about:blank","_blank");}
+  catch(error){console.error("Submission WhatsApp window could not be prepared:",error);}
+  return{url,window:chatWindow};
+}
+
+function showSubmissionWhatsAppFallback(fn,url){
+  const modal=document.getElementById("modal");
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"42px"},"✅"));
+  box.appendChild(div({fontSize:"17px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"8px"},
+    fn+" was saved"));
+  box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",lineHeight:"1.5",marginBottom:"18px"},
+    "WhatsApp could not open automatically. Open the prefilled message and tap Send to notify the administrator."));
+  box.appendChild(btn({width:"100%",background:"#25D366",border:"none",borderRadius:"12px",
+    color:"#fff",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "Open WhatsApp message",()=>{
+      modal.classList.remove("open");
+      window.open(url,"_blank");
+    }));
+  box.appendChild(btn({width:"100%",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"12px",color:C.muted,fontWeight:"700",fontSize:"15px",padding:"13px"},
+    "Continue",()=>modal.classList.remove("open")));
+  modal.classList.add("open");
+}
+
+function addSubmissionWhatsAppButton(fn,url){
+  const box=document.getElementById("modal-box");
+  const sendButton=btn({width:"100%",background:"#25D366",border:"none",borderRadius:"12px",
+    color:"#fff",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "Send "+fn+" to Admin on WhatsApp",()=>{
+      document.getElementById("modal").classList.remove("open");
+      window.open(url,"_blank");
+    });
+  box.insertBefore(sendButton,box.firstChild);
 }
 
 function showSaveFailedModal(fn,onRetry){
@@ -1736,7 +1851,9 @@ function renderAdminStaff(bdy){
     card.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.5",marginBottom:"12px"},
       "Create the email/password account in Firebase Console → Authentication, then paste its UID here. Saving links this staff profile to that account."));
     card.appendChild(aInp("Role","role",es,"e.g. QA Supervisor"));
-    card.appendChild(aInp("WhatsApp Number","wa",es,"e.g. 919810000000"));
+    card.appendChild(aInp("WhatsApp Number","wa",es,"Country code + number, e.g. 919810000000"));
+    card.appendChild(div({fontSize:"11px",color:C.muted,lineHeight:"1.5",marginTop:"-8px",marginBottom:"12px"},
+      "Enable WhatsApp Reports below to receive staff form submissions and daily reports at this number."));
     // Language
     const lw=div({marginBottom:"12px"});
     lw.appendChild(div({fontSize:"13px",fontWeight:"700",color:C.text,marginBottom:"6px"},"Language"));
@@ -1756,13 +1873,13 @@ function renderAdminStaff(bdy){
         es.forms=arr.includes("ALL")?"ALL":arr.filter(a=>a!=="ALL").join(",");
       }));
     // Flags
-    const fr=div({display:"flex",gap:"6px",marginBottom:"12px"});
-    [{key:"alerts",label:"Gets Alerts"},{key:"canReport",label:"View Reports"},{key:"canAttendance",label:"Take Attendance"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
+    const fr=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"12px"});
+    [{key:"alerts",label:"Gets Alerts"},{key:"reports",label:"WhatsApp Reports"},{key:"canReport",label:"View Reports"},{key:"canAttendance",label:"Take Attendance"},{key:"isAdmin",label:"Admin"}].forEach(f=>{
       const sel=es[f.key]===true;
       const protectedAdmin=f.key==="isAdmin"&&es.authUid===S.user.uid&&sel;
-      const b=btn({flex:"1",padding:"8px 4px",border:"2px solid "+(sel?C.green:C.border),
+      const b=btn({width:"100%",padding:"8px 4px",border:"2px solid "+(sel?C.green:C.border),
         borderRadius:"8px",background:sel?C.green+"22":C.surface,
-        color:sel?C.green:C.muted,fontWeight:"700",fontSize:"11px"},
+        color:sel?C.green:C.muted,fontWeight:"700",fontSize:"12px"},
         (sel?"✓ ":"")+f.label,()=>{
           if(protectedAdmin){toast("Transfer admin access in Firebase Console before removing your own admin role.");return;}
           es[f.key]=!sel;ss({editingStaff:{...es}});
@@ -1775,6 +1892,9 @@ function renderAdminStaff(bdy){
     ar.appendChild(btn({flex:"1",background:C.amber,border:"none",borderRadius:"10px",
       color:"#000",fontWeight:"800",fontSize:"14px",padding:"12px"},"Save",async()=>{
       if(!es.name){toast("Name is required");return;}
+      if(es.reports&&!/^\d{7,15}$/.test(String(es.wa||"").replace(/\D/g,""))){
+        toast("Enter a valid WhatsApp number with country code to enable WhatsApp Reports.");return;
+      }
       if(!es._key&&!es.authUid){toast("Create the Firebase account and enter its UID first");return;}
       if(es.authUid&&!/^[A-Za-z0-9_-]{20,}$/.test(es.authUid)){toast("Enter a valid Firebase Authentication UID");return;}
       if(es._key===S.user._key&&es.authUid!==S.user.uid){toast("You cannot change the Firebase UID of your signed-in account.");return;}
@@ -3252,6 +3372,8 @@ function showPostSubmitModal(fn){
   const meta=getFormsMeta()[fn]||{icon:"◉",color:C.green};
   const modal=document.getElementById("modal");
   const box=document.getElementById("modal-box");
+  const whatsappUrl=S.pendingSubmissionWhatsApp||"";
+  S.pendingSubmissionWhatsApp="";
   box.innerHTML="";
   box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"48px"},"✅"));
   const ttl=div({fontSize:"18px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"4px"});
@@ -3259,6 +3381,7 @@ function showPostSubmitModal(fn){
   box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",marginBottom:"20px"},
     new Date().toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})));
   box.appendChild(div({height:"1px",background:C.border,marginBottom:"16px"}));
+  if(whatsappUrl) addSubmissionWhatsAppButton(fn,whatsappUrl);
   box.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
     color:"#000",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
     "⬇ Download Today's Report",()=>{

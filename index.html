@@ -73,6 +73,7 @@ const C={
   bg:"#0F0E0C",surface:"rgba(255,255,255,0.05)",border:"rgba(255,255,255,0.10)",
   text:"#F0EDE8",muted:"rgba(240,237,232,0.45)",dark:"#1e1b18",
 };
+const HYGIENE_FORM="Factory Cleaning & Hygiene Checklist";
 
 const MACHINES=["MC 1","MC RP","MC 3","MC 4","MC 5","MC 6","MC 7","MC 8","MC 9","MC 10"];
 const QC_LINES=["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6"];
@@ -197,6 +198,26 @@ const CLEANING_ACCEPTANCE=[
   "Tools clean and stored separately; chemicals secured",
   "Area clean and orderly; any pending action documented"
 ];
+const HYGIENE_ITEMS=[
+  {id:"h1",hi:"आटा गूंथने की मशीन व उसके टब/ढक्कन साफ हों।",en:"The dough kneading machine, its tub and lid must be clean."},
+  {id:"h2",hi:"बाल्टियां साफ हों।",en:"All buckets must be clean."},
+  {id:"h3",hi:"आटा वाली परात साफ हो।",en:"The dough mixing tray must be clean."},
+  {id:"h4",hi:"आटा छानने वाली मशीन साफ हो।",en:"The flour-sieving machine must be clean."},
+  {id:"h5",hi:"टंकियों में पानी भरा हो और टंकी हमेशा ढकी हो।",en:"Water tanks must be filled and kept covered at all times."},
+  {id:"h6",hi:"मशीनों पर ग्रीस पाइप से ऑयल लीकेज न हो।",en:"There must be no oil leakage from grease pipes on the machines."},
+  {id:"h7",hi:"मशीन पर कोई भी धूल नहीं हो व धूल बॉक्स हमेशा बंद हो।",en:"Machines must be dust-free and dust collection boxes must remain closed."},
+  {id:"h8",hi:"मशीन का कोई भी कवर खुला न हो।",en:"All machine covers must remain closed."},
+  {id:"h9",hi:"आटा की टेबल साफ हो व आटा गीले कपड़े से ढका हो।",en:"The dough table must be clean and the dough must be covered with a damp cloth."},
+  {id:"h10",hi:"आटा का कोई बैग खुला न हो।",en:"No flour bag should be left open."},
+  {id:"h11",hi:"बिजली के सारे पैनल बंद हों।",en:"All electrical panels must be closed."},
+  {id:"h12",hi:"मशीन व Conveyor हमेशा साफ हों।",en:"Machines and conveyors must always be clean."},
+  {id:"h13",hi:"पैकिंग वाली जगह व ट्रॉली साफ हों।",en:"The packing area and trolleys must be clean."},
+  {id:"h14",hi:"रोटियां गीले कपड़े से हमेशा ढकी हों।",en:"Rotis must always be covered with a damp cloth."},
+  {id:"h15",hi:"बिन साफ हो।",en:"Bins must be clean."},
+  {id:"h16",hi:"Conveyor पर लगी तेल की डिब्बी में तेल हो।",en:"The oil container attached to the conveyor must have sufficient oil."},
+  {id:"h17",hi:"Insect Killer ON होना चाहिए।",en:"The insect killer must be switched ON."},
+  {id:"h18",hi:"Rodent Box चेक करें।",en:"Check the rodent control boxes."}
+];
 const LUX_AREAS=[
   ["Raw material / flour storage",150,200,"General storage area"],
   ["Dough mixing / kneading area",200,300,"General manufacturing"],
@@ -268,6 +289,10 @@ const HI = {
   "PPE / Badge Issued":"PPE / बैज जारी","Hygiene Briefing Given":"स्वच्छता जानकारी दी",
   "Meeting":"मीटिंग","Delivery":"डिलीवरी","Inspection":"निरीक्षण",
   "Repair":"मरम्मत","Vendor":"विक्रेता","Personal":"व्यक्तिगत","Other":"अन्य",
+  // Factory Cleaning & Hygiene Checklist
+  "Factory Cleaning & Hygiene Checklist":"फैक्टरी सफाई व स्वच्छता चेकलिस्ट",
+  "Tick-only daily cleaning and hygiene checks":"रोज़ाना सफाई व स्वच्छता की टिक-आधारित जाँच",
+  "Morning":"सुबह","Evening":"शाम","Done":"हो गया",
 };
 function t(label){ return (S.user&&S.user.lang==="hi"&&HI[label])||label; }
 function tOpts(opts){ return opts.map(o=>(S.user&&S.user.lang==="hi"&&HI[o])||o); }
@@ -292,6 +317,7 @@ const DEFAULT_FORMS_META={
   "Product Temperature Report":{icon:"🌡",color:"#F97316",desc:"Hourly roti temperatures by table",builtin:true},
   "Cloth Wash & Sanitation Log":{icon:"🧺",color:"#14B8A6",desc:"Cloth washing and sanitation records",builtin:true},
   "Flour Sieving Log":{icon:"⚖",color:"#2DD4A0",desc:"Flour batch sieving run register",builtin:true},
+  [HYGIENE_FORM]:{icon:"🧼",color:"#14B8A6",desc:"Tick-only daily cleaning and hygiene checks",builtin:true},
 };
 
 // ── FIREBASE STATE ────────────────────────────────────────────────────────────
@@ -330,7 +356,7 @@ function listen(path,onData,label){
 
 function listenToOwnSubmissions(){
   if(!S.user||S.user.canReport||S.user.isAdmin) return;
-  Object.keys({...DEFAULT_FORMS_META,...getFormsMeta()}).forEach(formName=>{
+  getUserForms(S.user).forEach(formName=>{
     const formKey=formName.replace(/ /g,"_");
     if(USER_SUBMISSION_UNSUBSCRIBERS[formKey]) return;
     const sessionId=AUTH_SESSION_ID;
@@ -755,6 +781,9 @@ function notifyPendingSubmissions(){
   if(S.user&&navigator.onLine) setTimeout(showPendingSubmissionsModal,500);
 }
 window.addEventListener("online",notifyPendingSubmissions);
+window.addEventListener("online",()=>{
+  if(S.activeForm===HYGIENE_FORM&&S.hygieneSaveState==="offline") flushHygieneSave(HYGIENE_FORM);
+});
 async function fbAddLog(fn,entry){
   if(!entry||!String(entry.user||"").trim()){
     toast("⚠ Staff name is required before submitting",3500);
@@ -826,6 +855,13 @@ const S={
   reportRange:"today",
   reportLine:null,
   pendingSubmissionWhatsApp:"",
+  hygieneSavedPath:null,
+  hygieneSaveState:"idle",
+  hygieneRecordId:null,
+  hygieneSaving:false,
+  hygieneDirty:false,
+  hygieneSavePromise:null,
+  hygieneStatusEl:null,
 };
 
 function ss(patch){Object.assign(S,patch);render();}
@@ -1503,8 +1539,8 @@ function renderHome(){
       display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",flexShrink:"0"},
       m.icon||"◉"));
     const info=div({flex:"1"});
-    info.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text},fn));
-    info.appendChild(div({fontSize:"12px",color:C.muted,marginTop:"2px"},m.desc||""));
+    info.appendChild(div({fontSize:"15px",fontWeight:"800",color:C.text},t(fn)));
+    info.appendChild(div({fontSize:"12px",color:C.muted,marginTop:"2px"},t(m.desc||"")));
     card.appendChild(info);
     const right=div({textAlign:"right",flexShrink:"0"});
     if(tl.length){
@@ -1928,8 +1964,23 @@ function renderAdminStaff(bdy){
     info.appendChild(div({fontSize:"14px",fontWeight:"800",color:C.text},s.name+(s.isAdmin?" ⚙":"")+(s.canReport?" 📊":"")));
     info.appendChild(div({fontSize:"12px",color:C.muted},s.role+(s.authUid?" · Firebase account linked":" · No Firebase account linked")));
     info.appendChild(div({fontSize:"11px",color:C.amber,marginTop:"2px"},"Forms: "+(s.forms==="ALL"?"All":toArr(s.forms).join(", ")||"None")));
+    info.appendChild(div({fontSize:"11px",color:C.blue,marginTop:"2px"},"Language: "+((s.lang||"en")==="hi"?"हिंदी":"English")));
     card.appendChild(info);
     const ab=div({display:"flex",gap:"6px",flexShrink:"0"});
+    const nextLang=(s.lang||"en")==="hi"?"en":"hi";
+    ab.appendChild(btn({background:C.purple+"22",border:"1px solid "+C.purple+"44",
+      borderRadius:"8px",color:C.purple,padding:"6px 9px",fontSize:"12px",fontWeight:"800"},
+      "🌐 "+((s.lang||"en")==="hi"?"हिं":"EN"),async()=>{
+        try{
+          const {_key,...rest}=s;
+          await fbSaveStaff(s._key,{...rest,lang:nextLang});
+          toast("✓ Language set to "+(nextLang==="hi"?"हिंदी":"English"));
+          render();
+        }catch(error){
+          console.error("Language update failed:",error);
+          toast("⚠ Language could not be updated.",4000);
+        }
+      }));
     ab.appendChild(btn({background:C.blue+"22",border:"1px solid "+C.blue+"44",
       borderRadius:"8px",color:C.blue,padding:"6px 10px",fontSize:"12px"},"Edit",
       ()=>ss({editingStaff:{...s}})));
@@ -2121,9 +2172,12 @@ async function startForm(fn){
     S.qcSaving=false;S.qcSaved=false;S.qcAlertSent=false;
   }
   S.screen="form";
+  S.hygieneSavedPath=null;S.hygieneSaveState="idle";S.hygieneRecordId=null;
+  S.hygieneSaving=false;S.hygieneDirty=false;S.hygieneSavePromise=null;S.hygieneStatusEl=null;
 
   // Try to load today's draft
   const savedAt=await loadDraft(fn);
+  if(fn===HYGIENE_FORM) hydrateHygieneFromSaved(fn);
   if(savedAt){
     // Show toast that draft was restored
     const t=new Date(savedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
@@ -2136,7 +2190,7 @@ function renderForm(){
   const fn=S.activeForm;
   const meta=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
   const w=div({minHeight:"100vh",background:C.bg});
-  w.appendChild(makeHdr(fn,S.user.name,
+  w.appendChild(makeHdr(t(fn),S.user.name,
     [span({fontSize:"13px",color:meta.color||C.amber,fontWeight:"700"},meta.icon||"◉")],
     ()=>{if(S.activeForm)saveDraft(S.activeForm);ss({screen:"home"});},"← Back"));
   w.appendChild(div({height:"3px",background:meta.color||C.amber}));
@@ -2155,6 +2209,7 @@ function renderForm(){
     "Product Temperature Report":renderOperationalForm,
     "Cloth Wash & Sanitation Log":renderOperationalForm,
     "Flour Sieving Log":renderOperationalForm,
+    [HYGIENE_FORM]:renderHygieneChecklist,
   };
   if(map[fn]) map[fn](bdy,meta,fn);
   else renderCustomForm(bdy,meta,fn);
@@ -2387,9 +2442,251 @@ function renderOperationalForm(bdy,meta,fn){
   submit();
 }
 
+// ── FACTORY CLEANING & HYGIENE CHECKLIST (tick-only) ─────────────────────────
+function hygieneDoneCount(){
+  const checks=S.fData&&S.fData.checks?S.fData.checks:{};
+  return HYGIENE_ITEMS.filter(item=>!!checks[item.id]&&checks[item.id].done).length;
+}
+function hygieneTimeLabel(value){
+  if(!value) return "";
+  const d=new Date(value);
+  return Number.isNaN(d.getTime())?"":d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+}
+function updateHygieneSaveStatus(){
+  const el=S.hygieneStatusEl;
+  if(!el) return;
+  const hi=S.user&&S.user.lang==="hi";
+  const state=S.hygieneSaveState;
+  el.textContent=state==="saving"?(hi?"सेव हो रहा है…":"Saving…")
+    :state==="saved"?(hi?"✓ सेव हो गया":"✓ Saved")
+    :state==="error"?(hi?"⚠ सेव नहीं हुआ":"⚠ Not saved")
+    :state==="offline"?(hi?"⚠ ऑफ़लाइन — डिवाइस पर सेव":"⚠ Offline — saved on device"):"";
+  el.style.color=(state==="error"||state==="offline")?C.red:state==="saved"?C.green:C.muted;
+}
+async function doHygieneSave(fn){
+  const date=S.fData.date,shift=S.fData.shift;
+  if(!date||!shift) return;
+  if(!navigator.onLine){S.hygieneSaveState="offline";updateHygieneSaveStatus();return;}
+  if(hygieneDoneCount()===0){
+    if(S.hygieneSavedPath){
+      try{await remove(ref(db,S.hygieneSavedPath));}
+      catch(error){console.error("Hygiene checklist clear failed:",error);}
+      S.hygieneSavedPath=null;S.hygieneRecordId=null;
+    }
+    S.hygieneSaveState="idle";updateHygieneSaveStatus();return;
+  }
+  S.hygieneSaveState="saving";updateHygieneSaveStatus();
+  if(!S.hygieneRecordId) S.hygieneRecordId=Date.now();
+  const path="submissions/"+fn.replace(/ /g,"_")+"/"+date+"_"+shift+"_"+S.user.uid;
+  const entry={id:S.hygieneRecordId,timestamp:new Date().toISOString(),formName:fn,
+    user:S.user.name,role:S.user.role,uid:S.user.uid,
+    data:{date,shift,checkedBy:S.user.name,checks:JSON.parse(JSON.stringify(S.fData.checks||{}))}};
+  try{
+    await set(ref(db,path),entry);
+    S.hygieneSavedPath=path;S.hygieneSaveState="saved";
+  }catch(error){
+    console.error("Hygiene checklist save failed:",error);
+    S.hygieneSaveState="error";
+  }
+  updateHygieneSaveStatus();
+}
+function flushHygieneSave(fn){
+  if(!S.user) return Promise.resolve();
+  S.hygieneDirty=true;
+  if(S.hygieneSaving) return S.hygieneSavePromise;
+  S.hygieneSaving=true;
+  S.hygieneSavePromise=(async()=>{
+    try{
+      while(S.hygieneDirty){
+        S.hygieneDirty=false;
+        await doHygieneSave(fn);
+      }
+    }finally{
+      S.hygieneSaving=false;
+      S.hygieneSavePromise=null;
+    }
+  })();
+  return S.hygieneSavePromise;
+}
+function hydrateHygieneFromSaved(fn){
+  if(!S.user) return;
+  const date=S.fData.date||todayKey();
+  const shift=S.fData.shift||(/evening/i.test(S.user.shift||"")?"Evening":"Morning");
+  if(!S.fData.date) S.fData.date=date;
+  if(!S.fData.shift) S.fData.shift=shift;
+  const records=getFormLogs(fn).filter(log=>{
+    const d=log.data||{};
+    return d.date===date&&d.shift===shift&&(log.uid===S.user.uid||log.user===S.user.name);
+  });
+  if(!records.length) return;
+  const latest=records.sort((a,b)=>String(b.timestamp||"").localeCompare(String(a.timestamp||"")))[0];
+  const hasDraft=S.fData.checks&&Object.keys(S.fData.checks).length;
+  if(!hasDraft&&latest.data&&latest.data.checks) S.fData.checks=latest.data.checks;
+  if(latest._key&&!String(latest._key).startsWith("local_")){
+    S.hygieneSavedPath="submissions/"+fn.replace(/ /g,"_")+"/"+latest._key;
+    S.hygieneRecordId=latest.id||null;
+  }
+  S.hygieneSaveState="saved";
+}
+function renderHygieneChecklist(bdy,meta,fn){
+  const hi=S.user&&S.user.lang==="hi";
+  const tr=(en,hiText)=>hi?hiText:en;
+  if(!S.fData.checks||typeof S.fData.checks!=="object"||Array.isArray(S.fData.checks)) S.fData.checks={};
+  if(!S.fData.date) S.fData.date=todayKey();
+  if(!S.fData.shift) S.fData.shift=/evening/i.test(S.user.shift||"")?"Evening":"Morning";
+  S.hygieneStatusEl=null;
+  const checks=()=>S.fData.checks;
+  let refreshList=()=>{};
+
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,lineHeight:"1.5",marginBottom:"14px"},
+    tr("Tick each check when it is done. Ticked checks move to the bottom and are saved automatically.",
+       "हर जाँच पूरी होने पर टिक करें। टिक की गई जाँच नीचे चली जाएगी और अपने आप सेव होगी।")));
+
+  bdy.appendChild(makeDate(t("Date"),S.fData.date,v=>{
+    if(v===S.fData.date) return;
+    S.fData.date=v;
+    if(hygieneDoneCount()){
+      S.fData.checks={};
+      toast(tr("Ticks cleared for the new date.","नई तारीख के लिए टिक हटा दिए गए।"));
+    }
+    S.hygieneSavedPath=null;S.hygieneRecordId=null;S.hygieneSaveState="idle";
+    hydrateHygieneFromSaved(fn);
+    scheduleDraftSave();refreshList();
+  }));
+
+  const shiftButtons=[];
+  const updateShift=()=>shiftButtons.forEach(({b,value})=>{
+    const sel=S.fData.shift===value;
+    b.style.border="2px solid "+(sel?C.green:C.border);
+    b.style.background=sel?C.green+"25":C.surface;
+    b.style.color=sel?C.green:C.muted;
+  });
+  const shiftWrap=fieldWrap(t("Shift"),"");
+  const shiftGrid=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px"});
+  [["Morning",t("Morning")],["Evening",t("Evening")]].forEach(([value,label])=>{
+    const b=btn({width:"100%",minHeight:"44px",padding:"11px 8px",borderRadius:"10px",
+      fontWeight:"700",fontSize:"14px",textAlign:"center"},label,()=>{
+      if(S.fData.shift===value) return;
+      S.fData.shift=value;
+      if(hygieneDoneCount()){
+        S.fData.checks={};
+        toast(tr("Ticks cleared for the new shift.","नई शिफ्ट के लिए टिक हटा दिए गए।"));
+      }
+      S.hygieneSavedPath=null;S.hygieneRecordId=null;S.hygieneSaveState="idle";
+      hydrateHygieneFromSaved(fn);
+      updateShift();scheduleDraftSave();refreshList();
+    });
+    shiftButtons.push({b,value});shiftGrid.appendChild(b);
+  });
+  shiftWrap.appendChild(shiftGrid);bdy.appendChild(shiftWrap);updateShift();
+
+  bdy.appendChild(div({fontSize:"12px",color:C.muted,marginBottom:"12px"},
+    t("Checked By")+": "+S.user.name));
+
+  const counter=div({fontSize:"13px",fontWeight:"800",color:meta.color||C.teal});
+  const status=div({fontSize:"11px",color:C.muted});
+  S.hygieneStatusEl=status;
+  const top=div({display:"flex",alignItems:"center",justifyContent:"space-between",gap:"8px",margin:"2px 0 10px"});
+  top.appendChild(counter);top.appendChild(status);bdy.appendChild(top);
+
+  const list=div({});
+  const rows=HYGIENE_ITEMS.map((item,index)=>{
+    const box=span({width:"26px",height:"26px",borderRadius:"50%",border:"2px solid "+C.border,
+      display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0",
+      fontSize:"15px",fontWeight:"800",color:"transparent",background:"transparent",
+      transition:"background .15s,border-color .15s,color .15s"},"✓");
+    const text=span({display:"block",fontSize:"14px",fontWeight:"700",lineHeight:"1.45",color:C.text},
+      hi?item.hi:item.en);
+    const num=span({display:"block",fontSize:"10px",fontWeight:"800",color:C.muted,
+      marginTop:"4px",letterSpacing:"0.06em"},tr("CHECK ","जाँच ")+String(index+1).padStart(2,"0"));
+    const hint=span({fontSize:"13px",color:C.muted,marginBottom:"2px"},
+      tr("Tap ✓ to mark done.","✓ पर टिक करें।"));
+    const content=div({flex:"1",minWidth:"0"});
+    content.appendChild(text);content.appendChild(num);
+    const row=el("div",{width:"100%",display:"flex",flexDirection:"column",
+      alignItems:"flex-start",gap:"0",
+      background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",
+      padding:"13px 14px",marginBottom:"8px",color:C.text,
+      transition:"background .15s,border-color .15s,opacity .15s"});
+    const btn=el("button",{flex:"1",display:"flex",alignItems:"flex-start",gap:"11px",
+      background:"transparent",border:"none",borderRadius:"12px",padding:"0",color:C.text,
+      cursor:"pointer",textAlign:"left",width:"100%"});
+    btn.appendChild(box);btn.appendChild(content);btn.appendChild(hint);
+    row.appendChild(btn);
+    const remarks=el("textarea",{
+      width:"100%",minHeight:"38px",marginTop:"8px",resize:"vertical",
+      background:"rgba(255,255,255,0.04)",border:"1px solid "+C.border,borderRadius:"10px",
+      color:C.text,fontSize:"12px",padding:"8px 10px",outline:"none",fontFamily:"inherit",display:"block"});
+    remarks.placeholder=tr("Remarks (optional)","टिप्पणी (वैकल्पिक)");
+    remarks.addEventListener("input",(e)=>{
+      const cur=checks();
+      if(!cur[item.id]) return;
+      cur[item.id].remarks=e.target.value;
+    });
+    row.appendChild(remarks);
+    row.addEventListener("click",e=>{
+      if(e.target&&e.target.tagName==="TEXTAREA") return;
+      const current=checks();
+      const done=!!current[item.id]&&current[item.id].done;
+      if(done) delete current[item.id];
+      else current[item.id]={done:true,at:new Date().toISOString()};
+      S.fData.checks=current;
+      scheduleDraftSave();
+      refreshList();
+      flushHygieneSave(fn);
+    });
+    return {item,index,row,box,text,num,remarks};
+  });
+  refreshList=()=>{
+    const current=checks();
+    rows.forEach(r=>{
+      const done=!!current[r.item.id]&&current[r.item.id].done;
+      r.row.style.background=done?"rgba(255,255,255,0.02)":C.surface;
+      r.row.style.borderColor=done?"rgba(255,255,255,0.06)":C.border;
+      r.row.style.opacity=done?"0.55":"1";
+      r.text.style.textDecoration=done?"line-through":"none";
+      r.text.style.color=done?C.muted:C.text;
+      r.num.style.textDecoration=done?"line-through":"none";
+      r.box.style.borderColor=done?C.green:C.border;
+      r.box.style.background=done?C.green:"transparent";
+      r.box.style.color=done?"#06251b":"transparent";
+      if(r.remarks){
+        if(r.remarks.parentNode) r.remarks.parentNode.removeChild(r.remarks);
+        if(done) r.row.appendChild(r.remarks);
+      }
+      r.row.setAttribute("aria-pressed",done?"true":"false");
+    });
+    rows.slice().sort((a,b)=>{
+      const ad=!!current[a.item.id]&&current[a.item.id].done;
+      const bd=!!current[b.item.id]&&current[b.item.id].done;
+      if(ad!==bd) return ad?1:-1;
+      return a.index-b.index;
+    }).forEach(r=>list.appendChild(r.row));
+    counter.textContent=hygieneDoneCount()+" / "+HYGIENE_ITEMS.length+" "+tr("done","पूर्ण");
+    updateHygieneSaveStatus();
+  };
+  rows.forEach(r=>list.appendChild(r.row));
+  bdy.appendChild(list);
+  refreshList();
+
+  bdy.appendChild(submitBtn(tr("Done","हो गया"),meta.color||C.teal,async()=>{
+    await flushHygieneSave(fn);
+    if(S.hygieneSaveState==="saved"||S.hygieneSaveState==="idle"){
+      clearDraft(fn);
+      toast(S.hygieneSaveState==="saved"?tr("✓ Checklist saved","✓ चेकलिस्ट सेव हो गई"):tr("Nothing ticked yet","अभी कोई टिक नहीं"));
+      ss({screen:"home"});
+    }else{
+      toast(tr("⚠ Not saved yet. Check your connection, then tap Done again.",
+        "⚠ अभी सेव नहीं हुआ। कनेक्शन जाँचें, फिर दोबारा हो गया दबाएँ।"),4500);
+    }
+  }));
+  bdy.appendChild(div({height:"30px"}));
+}
+
 const TEMPLATE_REPORT_FORMS=Object.keys(DEFAULT_FORMS_META).filter(fn=>[
   "Grooming","Flour Receiving Register","Cleaning Checklist","Customer Complaints & Feedback",
-  "Lux Level Report","Product Temperature Report","Cloth Wash & Sanitation Log","Flour Sieving Log"
+  "Lux Level Report","Product Temperature Report","Cloth Wash & Sanitation Log","Flour Sieving Log",
+  HYGIENE_FORM
 ].includes(fn));
 
 function parseTemplateReportDate(value){
@@ -2466,6 +2763,12 @@ function templateReportRows(formName,records){
       if(start&&end){const [sh,sm]=start.split(":").map(Number),[eh,em]=end.split(":").map(Number);duration=((eh*60+em-sh*60-sm+1440)%1440)+" min";}
       add(date,[d.batch||"",d.flourType||"",d.quantity||"",start,end,duration,d.foreignMatter||"",
         d.sieveCondition||"",d.operator||"",d.supervisor||"",d.remarks||""]);
+    }else if(formName===HYGIENE_FORM){
+      HYGIENE_ITEMS.forEach((item,i)=>{
+        const check=(d.checks||{})[item.id]||{};
+        add(date,[i+1,item.en,item.hi,check.done?"Done":"Not done",hygieneTimeLabel(check.at),
+          d.checkedBy||log.user||"",d.shift||""]);
+      });
     }
   });
   const headers={
@@ -2476,7 +2779,8 @@ function templateReportRows(formName,records){
     "Flour Receiving Register":["Date","Entry No.","Vehicle No.","Supplier Name","Challan / Invoice No.","Lot No.","Mfg. Date","Expiry Date","Appearance / (OK / Not OK)","Colour / (OK / Not OK)","Smell / Odour / (OK / Not OK)","Texture / (OK / Not OK)","Sensory Remarks","Foreign Matter","Infestation","Hygiene of Vehicle","Decision","Condition (if any)","QA Sign","Received By"],
     "Customer Complaints & Feedback":["S. No.","Date","Customer / Shop Name","Contact No.","Product","Batch / Lot No.","Type","Complaint / Feedback Details","Action Taken","Handled By","Status","Date Closed"],
     "Cloth Wash & Sanitation Log":["Date","Shift","Cloth Type","Wash Method","Detergent / Sanitiser Used","Drying Method","Visual Check OK?","Washed By","Supervisor Initials"],
-    "Flour Sieving Log":["Date","Batch / Lot No.","Flour Type","Qty Sieved (kg)","Start Time","End Time","Duration (min)","Foreign Matter Found?","Sieve Condition","Operator","Supervisor","Remarks"]
+    "Flour Sieving Log":["Date","Batch / Lot No.","Flour Type","Qty Sieved (kg)","Start Time","End Time","Duration (min)","Foreign Matter Found?","Sieve Condition","Operator","Supervisor","Remarks"],
+    [HYGIENE_FORM]:["Date","No.","Check (English)","Check (Hindi)","Status","Time","Checked By","Shift"]
   };
   return{headers:headers[formName]||["Date"],rows};
 }
@@ -2586,7 +2890,7 @@ function buildTemplatePrintHTML(formName,period,dateValue,endDateValue,records){
   }else if(formName==="Customer Complaints & Feedback"){
     sheetMeta="<div class='sub'>Unit name: "+escHtml(firstData.unitName||"")+" &nbsp; | &nbsp; Month / Year: "+escHtml(monthYear)+"</div>";
   }
-  return "<!doctype html><html><head><meta charset='utf-8'><title>"+escHtml(formName)+"</title><style>"+
+  return "<!doctype html><html><head><meta charset='utf-8'><title>"+escHtml(t(formName))+"</title><style>"+
     "@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#111;margin:0}h1{font-size:18px;margin:0 0 5px}"+
     ".sub{font-size:11px;margin-bottom:14px}.brand{font-weight:bold;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse;table-layout:auto}"+
     "th,td{border:1px solid #555;padding:5px 6px;text-align:left;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}"+
@@ -2595,7 +2899,7 @@ function buildTemplatePrintHTML(formName,period,dateValue,endDateValue,records){
     ".matrix th,.matrix td{padding:3px 2px;text-align:center}.matrix th:first-child,.matrix td:first-child,.matrix th:nth-child(2),.matrix td:nth-child(2){text-align:left}"+
     "@media print{.print{display:none} tr{break-inside:avoid} thead{display:table-header-group}}"+
     "</style></head><body><button class='print' onclick='window.print()'>Print / Save as PDF</button>"+
-    "<div class='brand'>ROTI FACTORY · OPERATIONAL RECORD</div><h1>"+escHtml(formName)+"</h1>"+
+    "<div class='brand'>ROTI FACTORY · OPERATIONAL RECORD</div><h1>"+escHtml(t(formName))+"</h1>"+
     "<div class='sub'>Period: "+escHtml(span)+" &nbsp; | &nbsp; Records: "+records.length+" &nbsp; | &nbsp; Generated: "+escHtml(new Date().toLocaleDateString())+"</div>"+
     sheetMeta+
     sheet+
@@ -2619,7 +2923,7 @@ function renderTemplateReports(){
     "Choose a form and period. Daily, weekly, and monthly periods fill the date range automatically; choose Manual date range to set your own From and To dates. Weekly means Monday–Sunday. The print view can be saved as PDF."));
   const fields=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"});
   const select=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
-  TEMPLATE_REPORT_FORMS.forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=name;if(name===S.templateForm)o.selected=true;select.appendChild(o);});
+  TEMPLATE_REPORT_FORMS.forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=t(name);if(name===S.templateForm)o.selected=true;select.appendChild(o);});
   select.addEventListener("change",()=>{S.templateForm=select.value;updateCount();});
   const period=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
   [["daily","Daily"],["weekly","Weekly (Monday–Sunday)"],["monthly","Monthly"],["manual","Manual date range"]].forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value===(S.templatePeriod||"daily"))o.selected=true;period.appendChild(o);});

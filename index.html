@@ -4919,23 +4919,9 @@ function renderFormReport(){
 
 
 function sendDailyReport(){
-  const today=new Date();
-  const ds=today.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-  let total=0;
-  const blocks=[];
-  getAllowedReportForms().forEach(fn=>{
-    const logs=getFormLogs(fn).filter(l=>new Date(l.timestamp).toDateString()===today.toDateString());
-    if(!logs.length) return;total+=logs.length;
-    blocks.push((getFormsMeta()[fn]?.icon||"◉")+" *"+fn+"*: "+logs.length+" submission(s)\n   By: "+[...new Set(logs.map(l=>l.user))].join(", "));
-  });
-  let msg="📋 *RF Factory — Daily Report*\n"+ds+"\n━━━━━━━━━━━━━━━━━━━━━━\n\n";
-  msg+="📊 *"+total+" submission(s) today*\n\n";
-  blocks.forEach(b=>{msg+=b+"\n\n";});
-  if(!total) msg+="No submissions today.\n\n";
-  msg+="\n━━━━━━━━━━━━━━━━━━━━━━\n_RF Factory Forms App_";
-  const recv=Object.values(FB_ALERT_RECIPIENTS).filter(r=>r.reports);
-  recv.forEach((r,i)=>setTimeout(()=>sendWA(r.wa,msg),i*1500));
-  toast("📊 Report sent!");
+  // Send the daily Excel report instead of the WhatsApp text message.
+  try{downloadMasterExcel(null,"today");}
+  catch(error){console.error("Daily report Excel download failed:",error);toast("⚠ Daily report could not be generated.",4000);}
 }
 
 // Missing makeDateField alias (used in some form renderers)

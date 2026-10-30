@@ -1513,7 +1513,7 @@ function renderHome(){
   bdy.appendChild(btn({width:"100%",background:C.blue+"18",border:"1px solid "+C.blue+"55",
     borderRadius:"12px",color:C.blue,fontWeight:"800",fontSize:"15px",padding:"13px",
     marginBottom:"16px"},"📄 Choose a form and download by date",
-    ()=>ss({screen:"templateReports",templateForm:"Flour Receiving Register",templatePeriod:"daily",templateDate:todayKey()})));
+    ()=>ss({screen:"templateReports",templateForm:getAllowedReportForms()[0]||"Flour Receiving Register",templatePeriod:"daily",templateDate:todayKey()})));
   if(u.canAttendance||u.isAdmin){
     const attendanceCard=div({background:C.surface,border:"1px solid "+C.green+"55",borderRadius:"14px",
       padding:"16px",marginBottom:"18px",display:"flex",alignItems:"center",gap:"14px",cursor:"pointer"},null,
@@ -2923,7 +2923,7 @@ function renderTemplateReports(){
     "Choose a form and period. Daily, weekly, and monthly periods fill the date range automatically; choose Manual date range to set your own From and To dates. Weekly means Monday–Sunday. The print view can be saved as PDF."));
   const fields=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"});
   const select=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
-  TEMPLATE_REPORT_FORMS.forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=t(name);if(name===S.templateForm)o.selected=true;select.appendChild(o);});
+  getAllowedReportForms().forEach(name=>{const o=document.createElement("option");o.value=name;o.textContent=t(name);if(name===S.templateForm)o.selected=true;select.appendChild(o);});
   select.addEventListener("change",()=>{S.templateForm=select.value;updateCount();});
   const period=el("select",{width:"100%",background:C.surface,border:"1px solid "+C.border,borderRadius:"9px",color:C.text,padding:"12px",fontSize:"14px"});
   [["daily","Daily"],["weekly","Weekly (Monday–Sunday)"],["monthly","Monthly"],["manual","Manual date range"]].forEach(([value,label])=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(value===(S.templatePeriod||"daily"))o.selected=true;period.appendChild(o);});
@@ -3822,10 +3822,10 @@ function renderReports(){
   const w=div({minHeight:"100vh",background:C.bg});
   const dlBtn=btn({background:C.green,border:"none",borderRadius:"8px",color:"#000",
     padding:"7px 12px",fontSize:"13px",fontWeight:"800"},
-    "⬇ Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange));
+    "⬇ Excel",()=>downloadMasterExcel(reportForm,S.reportRange));
   const htmlBtn=btn({background:C.blue,border:"none",borderRadius:"8px",color:"#fff",
     padding:"7px 12px",fontSize:"13px",fontWeight:"800"},
-    "▣ HTML",()=>downloadMasterHTML(S.reportForm,S.reportRange));
+    "▣ HTML",()=>downloadMasterHTML(reportForm,S.reportRange));
   w.appendChild(makeHdr("📊 Reports",S.user.name,[dlBtn,htmlBtn],()=>ss({screen:"home"}),"← Back"));
   const bdy=wrap();
   if(S.user.isAdmin){
@@ -3845,17 +3845,18 @@ function renderReports(){
       r.l,()=>ss({reportRange:r.v})));
   });
   bdy.appendChild(rr);
-  // Form filter
-  const allForms=Object.keys(getFormsMeta());
+  // Form filter — only forms the current user is allowed to report on
+  const allForms=getAllowedReportForms();
+  const reportForm=S.reportForm&&allForms.includes(S.reportForm)?S.reportForm:null;
   bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Filter by Form"));
   const fr=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"20px"});
-  const ab=btn({padding:"8px 14px",border:"2px solid "+(S.reportForm===null?C.green:C.border),
-    borderRadius:"20px",background:S.reportForm===null?C.green+"22":C.surface,
-    color:S.reportForm===null?C.green:C.muted,fontWeight:"700",fontSize:"13px"},
+  const ab=btn({padding:"8px 14px",border:"2px solid "+(reportForm===null?C.green:C.border),
+    borderRadius:"20px",background:reportForm===null?C.green+"22":C.surface,
+    color:reportForm===null?C.green:C.muted,fontWeight:"700",fontSize:"13px"},
     "All Forms",()=>ss({reportForm:null}));
   fr.appendChild(ab);
   allForms.forEach(fn=>{
-    const sel=S.reportForm===fn;
+    const sel=reportForm===fn;
     const m=getFormsMeta()[fn]||{};
     fr.appendChild(btn({padding:"8px 14px",border:"2px solid "+(sel?C.green:C.border),
       borderRadius:"20px",background:sel?C.green+"22":C.surface,
@@ -3863,8 +3864,8 @@ function renderReports(){
       (m.icon||"")+" "+fn,()=>ss({reportForm:fn})));
   });
   bdy.appendChild(fr);
-  const filtered=getFilteredLogs(S.reportForm,S.reportRange);
-  if(S.reportForm==="QC Form"){
+  const filtered=getFilteredLogs(reportForm,S.reportRange);
+  if(reportForm==="QC Form"){
     bdy.appendChild(div({fontSize:"11px",fontWeight:"800",color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"10px"},"Filter by Line"));
     const lr=div({display:"flex",flexWrap:"wrap",gap:"7px",marginBottom:"20px"});
     [{v:null,l:"All Lines"},...QC_LINES.map(line=>({v:line,l:line}))].forEach(line=>{
@@ -3912,7 +3913,7 @@ function renderReports(){
   if(!filtered.length){
     bdy.appendChild(div({textAlign:"center",color:C.muted,padding:"40px 0",fontSize:"14px"},"No submissions in selected range"));
   } else {
-    const show=S.reportForm?[S.reportForm]:Object.keys(byForm);
+    const show=reportForm?[reportForm]:Object.keys(byForm);
     show.forEach(fn=>{
       const m=getFormsMeta()[fn]||{icon:"◉",color:C.amber};
       const logs=filtered.filter(l=>l.formName===fn);
@@ -3948,15 +3949,15 @@ function renderReports(){
   bdy.appendChild(div({height:"16px"}));
   bdy.appendChild(btn({width:"100%",background:C.green,border:"none",borderRadius:"12px",
     color:"#000",fontWeight:"800",fontSize:"17px",padding:"15px"},
-    "⬇ Download Master Excel",()=>downloadMasterExcel(S.reportForm,S.reportRange)));
+    "⬇ Download Master Excel",()=>downloadMasterExcel(reportForm,S.reportRange)));
   bdy.appendChild(btn({width:"100%",background:C.blue,border:"none",borderRadius:"12px",
     color:"#fff",fontWeight:"800",fontSize:"17px",padding:"15px",marginTop:"8px"},
-    "▣ Download Master HTML",()=>downloadMasterHTML(S.reportForm,S.reportRange)));
+    "▣ Download Master HTML",()=>downloadMasterHTML(reportForm,S.reportRange)));
   bdy.appendChild(div({height:"40px"}));w.appendChild(bdy);return w;
 }
 
 function getFilteredLogs(formFilter,range){
-  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const forms=formFilter?[formFilter]:getAllowedReportForms();
   const now=new Date();
   const bounds=getReportRangeBounds(range,now);
   const logs=[];
@@ -4135,7 +4136,7 @@ function safeSheetName(name,used){
 function downloadMasterExcel(formFilter,range){
   if(typeof XLSX==="undefined"){toast("Excel library loading, please wait…");return;}
   const wb=XLSX.utils.book_new();
-  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const forms=formFilter?[formFilter]:getAllowedReportForms();
   const now=new Date();
   let sheets=0;
   const allLogs=getFilteredLogs(formFilter,range);
@@ -4175,7 +4176,7 @@ function downloadMasterExcel(formFilter,range){
 function downloadMasterHTML(formFilter,range){
   const allLogs=getFilteredLogs(formFilter,range);
   if(!allLogs.length){toast("No data in selected range");return;}
-  const forms=formFilter?[formFilter]:Object.keys(getFormsMeta());
+  const forms=formFilter?[formFilter]:getAllowedReportForms();
   const now=new Date();
   const rows=makeReadableReportRows(allLogs);
   const needs=rows.filter(row=>row.Result==="Needs Correction").length;
@@ -4481,6 +4482,16 @@ function getReportMeta(fn){
 }
 function getReportableNames(){
   return[...Object.keys(getFormsMeta()).filter(fn=>FORM_REPORT_CONFIG[fn]),...Object.keys(ATTENDANCE_REPORT_TYPES)];
+}
+function getAllowedReportForms(){
+  const isAdmin=!!S.user?.isAdmin;
+  const reportable=getReportableNames();
+  if(isAdmin) return reportable;
+  const assigned=getUserForms(S.user).filter(fn=>fn);
+  const allowed=assigned.filter(fn=>FORM_REPORT_CONFIG[fn]||ATTENDANCE_REPORT_TYPES[fn]);
+  const names=[];
+  allowed.forEach(fn=>{if(!names.includes(fn))names.push(fn);});
+  return names;
 }
 
 const RANGE_LABEL={today:"Today",week:"This Week",month:"This Month",all:"All Time"};
@@ -4912,7 +4923,7 @@ function sendDailyReport(){
   const ds=today.toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
   let msg="📋 *RF Factory — Daily Report*\n"+ds+"\n━━━━━━━━━━━━━━━━━━━━━━\n\n";
   let total=0;
-  Object.keys(getFormsMeta()).forEach(fn=>{
+  getAllowedReportForms().forEach(fn=>{
     const logs=getFormLogs(fn).filter(l=>new Date(l.timestamp).toDateString()===today.toDateString());
     if(!logs.length) return;total+=logs.length;
     msg+=(getFormsMeta()[fn]?.icon||"◉")+" *"+fn+"*: "+logs.length+" submission(s)\n";

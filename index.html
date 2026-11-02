@@ -205,7 +205,7 @@ const HYGIENE_ITEMS=[
   {id:"h4",hi:"आटा छानने वाली मशीन साफ हो।",en:"The flour-sieving machine must be clean."},
   {id:"h5",hi:"टंकियों में पानी भरा हो और टंकी हमेशा ढकी हो।",en:"Water tanks must be filled and kept covered at all times."},
   {id:"h6",hi:"मशीनों पर ग्रीस पाइप से ऑयल लीकेज न हो।",en:"There must be no oil leakage from grease pipes on the machines."},
-  {id:"h7",hi:"मशीन पर कोई भी धूल नहीं हो व धूल बॉक्स हमेशा बंद हो।",en:"Machines must be dust-free and dust collection boxes must remain closed."},
+  {id:"h7",hi:"मशीन पर धूल नहीं होनी चाहिए और टूल बॉक्स साफ़ व अपनी जगह पर होना चाहिए।",en:"Machines must be dust-free and the toolbox must be clean and kept in its designated place."},
   {id:"h8",hi:"मशीन का कोई भी कवर खुला न हो।",en:"All machine covers must remain closed."},
   {id:"h9",hi:"आटा की टेबल साफ हो व आटा गीले कपड़े से ढका हो।",en:"The dough table must be clean and the dough must be covered with a damp cloth."},
   {id:"h10",hi:"आटा का कोई बैग खुला न हो।",en:"No flour bag should be left open."},
@@ -2590,6 +2590,7 @@ function renderHygieneChecklist(bdy,meta,fn){
   top.appendChild(counter);top.appendChild(status);bdy.appendChild(top);
 
   const list=div({});
+  let pendingCheckId=null;
   const rows=HYGIENE_ITEMS.map((item,index)=>{
     const box=span({width:"26px",height:"26px",borderRadius:"50%",border:"2px solid "+C.border,
       display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0",
@@ -2608,34 +2609,65 @@ function renderHygieneChecklist(bdy,meta,fn){
       background:C.surface,border:"1px solid "+C.border,borderRadius:"12px",
       padding:"13px 14px",marginBottom:"8px",color:C.text,
       transition:"background .15s,border-color .15s,opacity .15s"});
-    const btn=el("button",{flex:"1",display:"flex",alignItems:"flex-start",gap:"11px",
+    const checkBtn=el("button",{flex:"1",display:"flex",alignItems:"flex-start",gap:"11px",
       background:"transparent",border:"none",borderRadius:"12px",padding:"0",color:C.text,
       cursor:"pointer",textAlign:"left",width:"100%"});
-    btn.appendChild(box);btn.appendChild(content);btn.appendChild(hint);
-    row.appendChild(btn);
+    checkBtn.appendChild(box);checkBtn.appendChild(content);checkBtn.appendChild(hint);
+    row.appendChild(checkBtn);
     const remarks=el("textarea",{
       width:"100%",minHeight:"38px",marginTop:"8px",resize:"vertical",
       background:"rgba(255,255,255,0.04)",border:"1px solid "+C.border,borderRadius:"10px",
       color:C.text,fontSize:"12px",padding:"8px 10px",outline:"none",fontFamily:"inherit",display:"block"});
     remarks.placeholder=tr("Remarks (optional)","टिप्पणी (वैकल्पिक)");
+    let remarksSaveTimer=null;
     remarks.addEventListener("input",(e)=>{
       const cur=checks();
       if(!cur[item.id]) return;
       cur[item.id].remarks=e.target.value;
+      scheduleDraftSave();
+      clearTimeout(remarksSaveTimer);
+      remarksSaveTimer=setTimeout(()=>flushHygieneSave(fn),500);
     });
-    row.appendChild(remarks);
-    row.addEventListener("click",e=>{
-      if(e.target&&e.target.tagName==="TEXTAREA") return;
+    const actions=div({display:"flex",gap:"8px",marginTop:"8px"});
+    const saveBtn=btn({flex:"1",background:C.green,border:"none",borderRadius:"9px",
+      color:"#06251b",fontWeight:"800",fontSize:"13px",padding:"10px"},
+      tr("Save","सेव करें"),()=>{
       const current=checks();
-      const done=!!current[item.id]&&current[item.id].done;
-      if(done) delete current[item.id];
-      else current[item.id]={done:true,at:new Date().toISOString()};
+      const entry={done:true,at:new Date().toISOString()};
+      if(remarks.value.trim()) entry.remarks=remarks.value;
+      current[item.id]=entry;
       S.fData.checks=current;
+      pendingCheckId=null;
       scheduleDraftSave();
       refreshList();
       flushHygieneSave(fn);
     });
-    return {item,index,row,box,text,num,remarks};
+    const cancelBtn=btn({flex:"1",background:"transparent",border:"1px solid "+C.border,
+      borderRadius:"9px",color:C.muted,fontWeight:"700",fontSize:"13px",padding:"10px"},
+      tr("Cancel","रद्द करें"),()=>{
+      pendingCheckId=null;
+      remarks.value="";
+      refreshList();
+    });
+    actions.appendChild(saveBtn);actions.appendChild(cancelBtn);
+    checkBtn.addEventListener("click",()=>{
+      const current=checks();
+      const done=!!current[item.id]&&current[item.id].done;
+      if(done){
+        delete current[item.id];
+        S.fData.checks=current;
+        pendingCheckId=null;
+        clearTimeout(remarksSaveTimer);
+        scheduleDraftSave();
+        refreshList();
+        flushHygieneSave(fn);
+      }else{
+        pendingCheckId=item.id;
+        remarks.value=(current[item.id]&&current[item.id].remarks)||"";
+        refreshList();
+      }
+    });
+    return {item,index,row,box,text,num,hint,remarks,actions};
   });
   refreshList=()=>{
     const current=checks();
@@ -2650,9 +2682,13 @@ function renderHygieneChecklist(bdy,meta,fn){
       r.box.style.borderColor=done?C.green:C.border;
       r.box.style.background=done?C.green:"transparent";
       r.box.style.color=done?"#06251b":"transparent";
-      if(r.remarks){
-        if(r.remarks.parentNode) r.remarks.parentNode.removeChild(r.remarks);
-        if(done) r.row.appendChild(r.remarks);
+      r.hint.textContent=done?tr("Tap ✓ to untick.","✓ हटाने के लिए टिक करें।"):
+        tr("Tap ✓ to mark done.","✓ पर टिक करें।");
+      if(r.remarks.parentNode) r.remarks.parentNode.removeChild(r.remarks);
+      if(r.actions.parentNode) r.actions.parentNode.removeChild(r.actions);
+      if(done||pendingCheckId===r.item.id){
+        r.row.appendChild(r.remarks);
+        if(!done) r.row.appendChild(r.actions);
       }
       r.row.setAttribute("aria-pressed",done?"true":"false");
     });
@@ -3963,7 +3999,9 @@ function getFilteredLogs(formFilter,range){
   const logs=[];
   forms.forEach(fn=>{
     getFormLogs(fn).forEach(log=>{
-      const d=new Date(log.timestamp);
+      const submittedDate=fn===HYGIENE_FORM&&log.data?.date?
+        new Date(log.data.date+"T00:00:00"):new Date(log.timestamp);
+      const d=Number.isNaN(submittedDate.getTime())?new Date(log.timestamp):submittedDate;
       let ok=true;
       if(bounds) ok=d>=bounds.start&&d<bounds.end;
       if(ok) logs.push(log);
@@ -4133,18 +4171,19 @@ function safeSheetName(name,used){
   used.add(result);return result;
 }
 
-function downloadMasterExcel(formFilter,range){
-  if(typeof XLSX==="undefined"){toast("Excel library loading, please wait…");return;}
+function downloadMasterExcel(formFilter,range,options){
+  const exportOptions=options||{};
+  if(typeof XLSX==="undefined"){toast("Excel library loading, please wait…");return false;}
   const wb=XLSX.utils.book_new();
-  const forms=formFilter?[formFilter]:getAllowedReportForms();
+  const forms=formFilter?[formFilter]:(exportOptions.forms||getAllowedReportForms());
   const now=new Date();
   let sheets=0;
-  const allLogs=getFilteredLogs(formFilter,range);
-  if(!allLogs.length){toast("No data in selected range");return;}
+  const allLogs=exportOptions.logs||getFilteredLogs(formFilter,range);
+  if(!allLogs.length){toast("No data in selected range");return false;}
   const usedSheets=new Set(["Summary"]);
   const summaryRows=[["RF Forms Report Summary"],["Period",range,"Generated",now.toLocaleString("en-IN")],["Total Submissions",allLogs.length],["Report","Submissions","OK","Needs Correction","Staff","Latest Entry"]];
   forms.forEach(fn=>{
-    const logs=getFilteredLogs(fn,range).filter(log=>log.formName===fn);
+    const logs=allLogs.filter(log=>log.formName===fn);
     if(!logs.length) return;
     const reportRows=makeReportRows(logs);
     const needsCorrection=reportRows.filter(row=>row.Result==="Needs Correction").length;
@@ -4159,7 +4198,7 @@ function downloadMasterExcel(formFilter,range){
   styleSummarySheet(sw,summaryRows.length-1,5);
   XLSX.utils.book_append_sheet(wb,sw,"Summary");
   forms.forEach(fn=>{
-    const logs=getFilteredLogs(fn,range).filter(log=>log.formName===fn);
+    const logs=allLogs.filter(log=>log.formName===fn);
     if(!logs.length) return;
     const readableRows=makeReadableReportRows(logs);
     const readableKeys=["Form","Staff Name","Date","Time","Line","Substance / Check","Answer","Result","Note"];
@@ -4169,8 +4208,10 @@ function downloadMasterExcel(formFilter,range){
     XLSX.utils.book_append_sheet(wb,ws,safeSheetName(fn,usedSheets));
     sheets++;
   });
-  XLSX.writeFile(wb,"RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_Reports_"+now.toISOString().slice(0,10)+".xlsx");
+  XLSX.writeFile(wb,exportOptions.filename||
+    "RF_Forms_"+(formFilter?formFilter.replace(/ /g,"_"):"Master")+"_"+range+"_Reports_"+now.toISOString().slice(0,10)+".xlsx");
   toast("✓ Excel downloaded — "+sheets+" sheet(s)");
+  return true;
 }
 
 function downloadMasterHTML(formFilter,range){
@@ -4343,6 +4384,14 @@ const FORM_REPORT_CONFIG={
     if(d.score!==undefined&&d.score!=="") out.push({group:d.topic||"—",label:"Training Score",bad:parseFloat(d.score)<=2});
     return out;
   }},
+  [HYGIENE_FORM]:{groupLabel:"Shift",namesLabel:null,extract(log){
+    const d=log.data||{},checks=d.checks||{};
+    return HYGIENE_ITEMS.map(item=>({
+      group:d.shift||"—",
+      label:item.en,
+      bad:!(checks[item.id]&&checks[item.id].done)
+    }));
+  }},
 };
 
 function computeFormReport(formName,range){
@@ -4355,10 +4404,14 @@ function computeFormReport(formName,range){
   const dayMap={},groupMap={},issueMap={},names={},instances=[];
   let totalChecks=0,totalIssues=0;
   logs.forEach(log=>{
-    const d=new Date(log.timestamp);
-    const iso=d.toISOString().slice(0,10);
+    const submittedAt=new Date(log.timestamp);
+    const reportDateKey=formName===HYGIENE_FORM&&/^\d{4}-\d{2}-\d{2}$/.test(log.data?.date||"")?
+      log.data.date:null;
+    const reportDate=reportDateKey?new Date(reportDateKey+"T00:00:00"):submittedAt;
+    const d=Number.isNaN(reportDate.getTime())?submittedAt:reportDate;
+    const iso=reportDateKey||d.toISOString().slice(0,10);
     const label=d.toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
-    const timeLabel=d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+    const timeLabel=submittedAt.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
     if(!dayMap[iso]) dayMap[iso]={label,checks:0,issues:0};
     let items=[];
     try{items=cfg.extract(log)||[];}catch(e){items=[];}
@@ -4918,10 +4971,86 @@ function renderFormReport(){
 }
 
 
+function getCurrentUserDailyReport(){
+  if(!S.user||!S.user.uid) return{forms:[],logs:[]};
+  const forms=getUserForms(S.user);
+  const now=new Date();
+  const start=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const end=new Date(start.getTime()+86400000);
+  const todayLogs=[];
+  const seen=new Set();
+  const pending=getPendingSubmissions();
+  forms.forEach(fn=>{
+    const pendingForForm=pending.filter(item=>item.fn===fn&&item.entry)
+      .map(item=>({...item.entry,_key:"pending_"+item.entry.id,_local:true}));
+    [...getFormLogs(fn),...pendingForForm].forEach(log=>{
+      if(log.formName!==fn) return;
+      if(log.uid!==S.user.uid&&!(log._local&&!log.uid)) return;
+      const submittedAt=new Date(log.timestamp);
+      if(Number.isNaN(submittedAt.getTime())||submittedAt<start||submittedAt>=end) return;
+      const id=String(log.id||log._key||"");
+      const key=fn+"_"+id;
+      if(seen.has(key)) return;
+      seen.add(key);
+      todayLogs.push(log);
+    });
+  });
+  return{forms,logs:todayLogs.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))};
+}
+
+function showDailyReportWhatsAppFallback(url,filename){
+  const modal=document.getElementById("modal");
+  const box=document.getElementById("modal-box");
+  box.innerHTML="";
+  box.appendChild(div({textAlign:"center",marginBottom:"12px",fontSize:"42px"},"📊"));
+  box.appendChild(div({fontSize:"17px",fontWeight:"800",color:C.text,textAlign:"center",marginBottom:"8px"},
+    "Today's Excel report is downloaded"));
+  box.appendChild(div({fontSize:"13px",color:C.muted,textAlign:"center",lineHeight:"1.5",marginBottom:"18px"},
+    "Open the saved WhatsApp chat, attach "+filename+", and tap Send."));
+  box.appendChild(btn({width:"100%",background:"#25D366",border:"none",borderRadius:"12px",
+    color:"#fff",fontWeight:"800",fontSize:"15px",padding:"13px",marginBottom:"10px"},
+    "Open WhatsApp chat",()=>{modal.classList.remove("open");window.open(url,"_blank");}));
+  box.appendChild(btn({width:"100%",background:C.surface,border:"1px solid "+C.border,
+    borderRadius:"12px",color:C.muted,fontWeight:"700",fontSize:"15px",padding:"13px"},
+    "Close",()=>modal.classList.remove("open")));
+  modal.classList.add("open");
+}
+
 function sendDailyReport(){
-  // Send the daily Excel report instead of the WhatsApp text message.
-  try{downloadMasterExcel(null,"today");}
-  catch(error){console.error("Daily report Excel download failed:",error);toast("⚠ Daily report could not be generated.",4000);}
+  if(!S.user){toast("⚠ Sign in to prepare today's report.",4000);return;}
+  const recipient=getSubmissionReportRecipient();
+  if(!recipient){
+    toast("⚠ No WhatsApp Reports recipient is configured. Ask an admin to save a WhatsApp number.",5000);
+    return;
+  }
+  const{forms,logs}=getCurrentUserDailyReport();
+  if(!logs.length){toast("No reports submitted by you today.",4000);return;}
+  const phone=String(recipient.wa).replace(/\D/g,"");
+  const date=todayKey();
+  const staffSlug=String(S.user.name||"Staff").trim().replace(/[^\w-]+/g,"_").replace(/^_+|_+$/g,"")||"Staff";
+  const filename="RF_Forms_Todays_Report_"+staffSlug+"_"+date+".xlsx";
+  const message="RF Forms report for "+(S.user.name||"Staff")+" submitted today ("+date+"). Please find the attached Excel report.";
+  const url="https://wa.me/"+phone+"?text="+encodeURIComponent(message);
+  let chatWindow=null;
+  try{
+    if(typeof XLSX==="undefined"){toast("Excel library loading, please wait…");return;}
+    chatWindow=window.open("about:blank","_blank");
+    const downloaded=downloadMasterExcel(null,"today",{forms,logs,filename});
+    if(!downloaded){
+      if(chatWindow&&!chatWindow.closed) chatWindow.close();
+      return;
+    }
+    if(chatWindow&&!chatWindow.closed){
+      chatWindow.location.href=url;
+      toast("Excel downloaded. Attach "+filename+" in WhatsApp and tap Send.",5000);
+    }else{
+      showDailyReportWhatsAppFallback(url,filename);
+    }
+  }catch(error){
+    if(chatWindow&&!chatWindow.closed) chatWindow.close();
+    console.error("Daily report Excel download failed:",error);
+    toast("⚠ Daily report could not be generated.",4000);
+  }
 }
 
 // Missing makeDateField alias (used in some form renderers)

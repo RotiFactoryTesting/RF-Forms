@@ -62,10 +62,10 @@ Assigned staff sign in with their work email and password, then use only the for
 To route staff form submissions to an administrator:
 
 1. In **Admin → Staff**, edit the receiving administrator's profile and enter a WhatsApp number with its country code (digits only, for example `919810000000`).
-2. Enable **WhatsApp Reports** for that profile and save it. The app prefers an administrator profile with this flag; otherwise it uses the first configured WhatsApp Reports recipient. The same setting receives the daily report.
+2. Enable **WhatsApp Reports** for that profile and save it. The app prefers an administrator profile with this flag; otherwise it uses the first configured WhatsApp Reports recipient. The **Send Today's Report** button creates an Excel workbook containing only today's submissions by the signed-in user and opens a prefilled WhatsApp chat to this recipient. Attach the downloaded workbook in WhatsApp and tap **Send**.
 3. After a staff member saves a form online, RF Forms opens a prefilled WhatsApp chat containing the form name, staff member, submission time, and entered form fields. The staff member must review it and tap **Send** in WhatsApp.
 
-WhatsApp click-to-chat does not permit a browser app to send messages silently or guarantee delivery. If a browser blocks the chat tab, the saved submission remains saved and RF Forms shows an **Open WhatsApp message** action. If no recipient is configured, ask an administrator to add the number and enable **WhatsApp Reports**. The notification contact number is readable by signed-in app users so the existing client-side WhatsApp flows can use it; do not enter a number that should be kept secret.
+WhatsApp click-to-chat does not permit a browser app to send messages silently, attach a downloaded workbook automatically, or guarantee delivery. The daily report workbook is downloaded separately and must be attached by the user in WhatsApp. If a browser blocks the chat tab, RF Forms offers an **Open WhatsApp chat** action. If no recipient is configured, ask an administrator to add the number and enable **WhatsApp Reports**. The notification contact number is readable by signed-in app users so the existing client-side WhatsApp flows can use it; do not enter a number that should be kept secret.
 
 ## Add staff accounts
 
